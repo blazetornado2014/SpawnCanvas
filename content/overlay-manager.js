@@ -431,6 +431,15 @@
         background: rgba(255, 255, 255, 0.03);
         min-width: var(--container-min-width);
         min-height: var(--container-min-height);
+        z-index: 1;
+      }
+
+      .canvas-item.container.selected {
+        z-index: 2;
+      }
+
+      .canvas-item.container.dragging {
+        z-index: 3;
       }
 
       .container-color-bar {
