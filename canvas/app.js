@@ -13,6 +13,7 @@ class CanvasApp {
     this.wrapper = null;
     this.canvasArea = null;
     this.canvasSurface = null;
+    this.workspaceSelector = null;
     
     // Pan state
     this.panOffset = { x: 0, y: 0 };
@@ -26,9 +27,6 @@ class CanvasApp {
     this.canvasSize = 5000;
     this.gridSize = 20;
     
-    // Items on canvas (will be managed by store later)
-    this.items = new Map();
-    
     // Bind methods
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleCanvasMouseDown = this.handleCanvasMouseDown.bind(this);
@@ -39,13 +37,56 @@ class CanvasApp {
   /**
    * Initialize the application
    */
-  init() {
+  async init() {
     this.render();
     this.cacheElements();
     this.attachEventListeners();
-    this.resetView();
+    
+    // Initialize store and load workspace
+    await Store.init();
+    
+    // Load saved viewport or reset to center
+    const viewport = Store.getViewport();
+    if (viewport.x !== 0 || viewport.y !== 0) {
+      this.panOffset = { x: viewport.x, y: viewport.y };
+      this.updateCanvasTransform();
+    } else {
+      this.resetView();
+    }
+    
+    // Render existing items
+    this.renderAllItems();
+    
+    // Populate workspace dropdown
+    await this.populateWorkspaceDropdown();
+    
+    // Subscribe to store events
+    this.subscribeToStoreEvents();
     
     console.log('[SpawnCanvas] App initialized');
+  }
+
+  /**
+   * Subscribe to store events for reactive updates
+   */
+  subscribeToStoreEvents() {
+    Store.on('workspace:switched', () => {
+      // Clear canvas and re-render
+      this.clearCanvas();
+      this.renderAllItems();
+      
+      // Restore viewport
+      const viewport = Store.getViewport();
+      if (viewport.x !== 0 || viewport.y !== 0) {
+        this.panOffset = { x: viewport.x, y: viewport.y };
+        this.updateCanvasTransform();
+      } else {
+        this.resetView();
+      }
+      
+      // Update dropdown selection
+      this.updateWorkspaceDropdownSelection();
+    });
   }
 
   /**
@@ -91,6 +132,7 @@ class CanvasApp {
     this.canvasArea = this.wrapper.querySelector('.canvas-area');
     this.canvasSurface = this.wrapper.querySelector('.canvas-surface');
     this.toolbar = this.wrapper.querySelector('.toolbar');
+    this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
   }
 
   /**
@@ -108,6 +150,11 @@ class CanvasApp {
       }
     });
     
+    // Workspace selector
+    this.workspaceSelector.addEventListener('change', (e) => {
+      this.handleWorkspaceChange(e.target.value);
+    });
+    
     // Canvas panning
     this.canvasArea.addEventListener('mousedown', this.handleCanvasMouseDown);
     this.canvasArea.addEventListener('mousemove', this.handleCanvasMouseMove);
@@ -118,6 +165,87 @@ class CanvasApp {
     this.canvasSurface.addEventListener('click', (e) => {
       if (e.target === this.canvasSurface || e.target.classList.contains('center-anchor')) {
         this.deselectAll();
+      }
+    });
+  }
+
+  /**
+   * Populate workspace dropdown with all workspaces
+   */
+  async populateWorkspaceDropdown() {
+    const workspaces = await Store.getWorkspaces();
+    const currentWorkspace = Store.getCurrentWorkspace();
+    
+    this.workspaceSelector.innerHTML = '';
+    
+    workspaces.forEach(ws => {
+      const option = document.createElement('option');
+      option.value = ws.id;
+      option.textContent = ws.name;
+      if (currentWorkspace && ws.id === currentWorkspace.id) {
+        option.selected = true;
+      }
+      this.workspaceSelector.appendChild(option);
+    });
+    
+    // Add "New Workspace" option
+    const newOption = document.createElement('option');
+    newOption.value = '__new__';
+    newOption.textContent = '+ New Workspace';
+    this.workspaceSelector.appendChild(newOption);
+  }
+
+  /**
+   * Update dropdown selection to match current workspace
+   */
+  updateWorkspaceDropdownSelection() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (currentWorkspace) {
+      this.workspaceSelector.value = currentWorkspace.id;
+    }
+  }
+
+  /**
+   * Handle workspace change from dropdown
+   */
+  async handleWorkspaceChange(value) {
+    if (value === '__new__') {
+      // Prompt for new workspace name
+      const name = prompt('Enter workspace name:');
+      if (name && name.trim()) {
+        const workspace = await Store.createWorkspace(name.trim());
+        await Store.switchWorkspace(workspace.id);
+        await this.populateWorkspaceDropdown();
+      } else {
+        // Reset to current workspace if cancelled
+        this.updateWorkspaceDropdownSelection();
+      }
+    } else {
+      await Store.switchWorkspace(value);
+    }
+  }
+
+  /**
+   * Clear all items from canvas
+   */
+  clearCanvas() {
+    const items = this.canvasSurface.querySelectorAll('.canvas-item');
+    items.forEach(item => item.remove());
+    this.selectedItems.clear();
+  }
+
+  /**
+   * Render all items from store
+   */
+  renderAllItems() {
+    const items = Store.getAllItems();
+    items.forEach(item => {
+      if (item.type === 'note') {
+        this.renderNote(item);
+      } else if (item.type === 'checklist') {
+        this.renderChecklist(item);
+      } else if (item.type === 'container') {
+        this.renderContainer(item);
       }
     });
   }
@@ -212,8 +340,13 @@ class CanvasApp {
    * Handle canvas mouse up - stop panning
    */
   handleCanvasMouseUp() {
-    this.isPanning = false;
-    this.canvasArea.classList.remove('panning');
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.canvasArea.classList.remove('panning');
+      
+      // Save viewport position
+      Store.updateViewport(this.panOffset.x, this.panOffset.y);
+    }
   }
 
   /**
@@ -238,12 +371,18 @@ class CanvasApp {
     };
     
     this.updateCanvasTransform();
+    
+    // Save viewport position
+    Store.updateViewport(this.panOffset.x, this.panOffset.y);
   }
 
   /**
    * Close the overlay
    */
   handleClose() {
+    // Save before closing
+    Store.saveNow();
+    
     // Dispatch event to overlay manager
     const event = new CustomEvent('spawn-canvas-close', { bubbles: true, composed: true });
     this.wrapper.dispatchEvent(event);
@@ -278,8 +417,10 @@ class CanvasApp {
    * Navigate through items (1 = prev, 2 = next)
    */
   navigateItems(direction) {
-    const itemIds = Array.from(this.items.keys());
-    if (itemIds.length === 0) return;
+    const items = Store.getAllItems();
+    if (items.length === 0) return;
+    
+    const itemIds = items.map(item => item.id);
     
     let currentIndex = -1;
     if (this.selectedItems.size === 1) {
@@ -315,7 +456,7 @@ class CanvasApp {
    * Pan canvas to show an item
    */
   panToItem(id) {
-    const item = this.items.get(id);
+    const item = Store.getItem(id);
     if (!item) return;
     
     const areaRect = this.canvasArea.getBoundingClientRect();
@@ -327,13 +468,7 @@ class CanvasApp {
     };
     
     this.updateCanvasTransform();
-  }
-
-  /**
-   * Generate a unique ID
-   */
-  generateId() {
-    return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    Store.updateViewport(this.panOffset.x, this.panOffset.y);
   }
 
   /**
@@ -355,29 +490,25 @@ class CanvasApp {
    * Add a new note
    */
   addNote() {
-    const id = this.generateId();
     const position = this.getNewItemPosition();
     
-    const note = {
-      id,
-      type: 'note',
+    const note = Store.createItem('note', {
       title: '',
       content: '',
       position,
-      size: { width: 250, height: 180 },
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+      size: { width: 250, height: 180 }
+    });
     
-    this.items.set(id, note);
-    this.renderNote(note);
-    this.selectItem(id);
-    
-    // Focus the title input
-    setTimeout(() => {
-      const titleInput = this.canvasSurface.querySelector(`[data-item-id="${id}"] .item-title`);
-      if (titleInput) titleInput.focus();
-    }, 0);
+    if (note) {
+      this.renderNote(note);
+      this.selectItem(note.id);
+      
+      // Focus the title input
+      setTimeout(() => {
+        const titleInput = this.canvasSurface.querySelector(`[data-item-id="${note.id}"] .item-title`);
+        if (titleInput) titleInput.focus();
+      }, 0);
+    }
   }
 
   /**
@@ -408,7 +539,7 @@ class CanvasApp {
       <div class="resize-handle edge s"></div>
     `;
     
-    this.attachItemListeners(element, note);
+    this.attachItemListeners(element, note.id);
     this.canvasSurface.appendChild(element);
   }
 
@@ -416,29 +547,25 @@ class CanvasApp {
    * Add a new checklist
    */
   addChecklist() {
-    const id = this.generateId();
     const position = this.getNewItemPosition();
     
-    const checklist = {
-      id,
-      type: 'checklist',
+    const checklist = Store.createItem('checklist', {
       title: '',
       items: [],
       position,
-      size: { width: 280, height: 200 },
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+      size: { width: 280, height: 200 }
+    });
     
-    this.items.set(id, checklist);
-    this.renderChecklist(checklist);
-    this.selectItem(id);
-    
-    // Focus the title input
-    setTimeout(() => {
-      const titleInput = this.canvasSurface.querySelector(`[data-item-id="${id}"] .item-title`);
-      if (titleInput) titleInput.focus();
-    }, 0);
+    if (checklist) {
+      this.renderChecklist(checklist);
+      this.selectItem(checklist.id);
+      
+      // Focus the title input
+      setTimeout(() => {
+        const titleInput = this.canvasSurface.querySelector(`[data-item-id="${checklist.id}"] .item-title`);
+        if (titleInput) titleInput.focus();
+      }, 0);
+    }
   }
 
   /**
@@ -472,8 +599,8 @@ class CanvasApp {
       <div class="resize-handle edge s"></div>
     `;
     
-    this.attachItemListeners(element, checklist);
-    this.attachChecklistListeners(element, checklist);
+    this.attachItemListeners(element, checklist.id);
+    this.attachChecklistListeners(element, checklist.id);
     this.canvasSurface.appendChild(element);
   }
 
@@ -495,12 +622,12 @@ class CanvasApp {
   /**
    * Attach checklist-specific listeners
    */
-  attachChecklistListeners(element, checklist) {
+  attachChecklistListeners(element, checklistId) {
     const content = element.querySelector('.item-content');
     
     // Add item button
     content.querySelector('.add-checklist-item').addEventListener('click', () => {
-      this.addChecklistItem(checklist.id);
+      this.addChecklistItem(checklistId);
     });
     
     // Delegate events for checklist items
@@ -508,7 +635,7 @@ class CanvasApp {
       if (e.target.type === 'checkbox') {
         const li = e.target.closest('.checklist-item');
         const itemId = li.dataset.itemId;
-        this.toggleChecklistItem(checklist.id, itemId, e.target.checked);
+        this.toggleChecklistItem(checklistId, itemId, e.target.checked);
       }
     });
     
@@ -516,7 +643,7 @@ class CanvasApp {
       if (e.target.classList.contains('item-text')) {
         const li = e.target.closest('.checklist-item');
         const itemId = li.dataset.itemId;
-        this.updateChecklistItemText(checklist.id, itemId, e.target.value);
+        this.updateChecklistItemText(checklistId, itemId, e.target.value);
       }
     });
     
@@ -524,7 +651,7 @@ class CanvasApp {
       if (e.target.classList.contains('item-delete')) {
         const li = e.target.closest('.checklist-item');
         const itemId = li.dataset.itemId;
-        this.deleteChecklistItem(checklist.id, itemId);
+        this.deleteChecklistItem(checklistId, itemId);
       }
     });
     
@@ -532,14 +659,14 @@ class CanvasApp {
     content.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.classList.contains('item-text')) {
         e.preventDefault();
-        this.addChecklistItem(checklist.id);
+        this.addChecklistItem(checklistId);
       }
       // Tab for indentation
       if (e.key === 'Tab' && e.target.classList.contains('item-text')) {
         e.preventDefault();
         const li = e.target.closest('.checklist-item');
         const itemId = li.dataset.itemId;
-        this.toggleChecklistItemNesting(checklist.id, itemId, !e.shiftKey);
+        this.toggleChecklistItemNesting(checklistId, itemId, !e.shiftKey);
       }
     });
   }
@@ -548,7 +675,7 @@ class CanvasApp {
    * Add a new checklist item
    */
   addChecklistItem(checklistId) {
-    const checklist = this.items.get(checklistId);
+    const checklist = Store.getItem(checklistId);
     if (!checklist) return;
     
     const newItem = {
@@ -559,16 +686,14 @@ class CanvasApp {
     };
     
     checklist.items.push(newItem);
-    checklist.updatedAt = Date.now();
+    Store.updateItem(checklistId, { items: checklist.items });
     
     // Re-render checklist items
     const element = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"]`);
     const ul = element.querySelector('.checklist-items');
     ul.innerHTML = this.renderChecklistItems(checklist.items);
     
-    // Attach listeners and focus new item
-    this.attachChecklistListeners(element, checklist);
-    
+    // Focus new item
     setTimeout(() => {
       const newInput = ul.querySelector(`[data-item-id="${newItem.id}"] .item-text`);
       if (newInput) newInput.focus();
@@ -579,13 +704,13 @@ class CanvasApp {
    * Toggle checklist item completion
    */
   toggleChecklistItem(checklistId, itemId, completed) {
-    const checklist = this.items.get(checklistId);
+    const checklist = Store.getItem(checklistId);
     if (!checklist) return;
     
     const item = checklist.items.find(i => i.id === itemId);
     if (item) {
       item.completed = completed;
-      checklist.updatedAt = Date.now();
+      Store.updateItem(checklistId, { items: checklist.items });
       
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
       if (li) {
@@ -598,13 +723,13 @@ class CanvasApp {
    * Update checklist item text
    */
   updateChecklistItemText(checklistId, itemId, text) {
-    const checklist = this.items.get(checklistId);
+    const checklist = Store.getItem(checklistId);
     if (!checklist) return;
     
     const item = checklist.items.find(i => i.id === itemId);
     if (item) {
       item.text = text;
-      checklist.updatedAt = Date.now();
+      Store.updateItem(checklistId, { items: checklist.items });
     }
   }
 
@@ -612,13 +737,13 @@ class CanvasApp {
    * Delete checklist item
    */
   deleteChecklistItem(checklistId, itemId) {
-    const checklist = this.items.get(checklistId);
+    const checklist = Store.getItem(checklistId);
     if (!checklist) return;
     
     const index = checklist.items.findIndex(i => i.id === itemId);
     if (index > -1) {
       checklist.items.splice(index, 1);
-      checklist.updatedAt = Date.now();
+      Store.updateItem(checklistId, { items: checklist.items });
       
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
       if (li) li.remove();
@@ -629,7 +754,7 @@ class CanvasApp {
    * Toggle checklist item nesting
    */
   toggleChecklistItemNesting(checklistId, itemId, indent) {
-    const checklist = this.items.get(checklistId);
+    const checklist = Store.getItem(checklistId);
     if (!checklist) return;
     
     const item = checklist.items.find(i => i.id === itemId);
@@ -639,7 +764,7 @@ class CanvasApp {
       } else if (!indent && item.nested > 0) {
         item.nested = item.nested - 1;
       }
-      checklist.updatedAt = Date.now();
+      Store.updateItem(checklistId, { items: checklist.items });
       
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
       if (li) {
@@ -655,33 +780,29 @@ class CanvasApp {
    * Add a new container
    */
   addContainer() {
-    const id = this.generateId();
     const position = this.getNewItemPosition();
     
     const colors = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
     
-    const container = {
-      id,
-      type: 'container',
+    const container = Store.createItem('container', {
       title: '',
       color: randomColor,
       position,
       size: { width: 350, height: 250 },
-      children: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+      children: []
+    });
     
-    this.items.set(id, container);
-    this.renderContainer(container);
-    this.selectItem(id);
-    
-    // Focus the title input
-    setTimeout(() => {
-      const titleInput = this.canvasSurface.querySelector(`[data-item-id="${id}"] .item-title`);
-      if (titleInput) titleInput.focus();
-    }, 0);
+    if (container) {
+      this.renderContainer(container);
+      this.selectItem(container.id);
+      
+      // Focus the title input
+      setTimeout(() => {
+        const titleInput = this.canvasSurface.querySelector(`[data-item-id="${container.id}"] .item-title`);
+        if (titleInput) titleInput.focus();
+      }, 0);
+    }
   }
 
   /**
@@ -713,20 +834,20 @@ class CanvasApp {
       <div class="resize-handle edge s"></div>
     `;
     
-    this.attachItemListeners(element, container);
-    this.attachContainerListeners(element, container);
+    this.attachItemListeners(element, container.id);
+    this.attachContainerListeners(element, container.id);
     this.canvasSurface.appendChild(element);
   }
 
   /**
    * Attach container-specific listeners
    */
-  attachContainerListeners(element, container) {
+  attachContainerListeners(element, containerId) {
     const colorBtn = element.querySelector('.color-btn');
     
     colorBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.cycleContainerColor(container.id);
+      this.cycleContainerColor(containerId);
     });
   }
 
@@ -734,27 +855,27 @@ class CanvasApp {
    * Cycle through container colors
    */
   cycleContainerColor(containerId) {
-    const container = this.items.get(containerId);
+    const container = Store.getItem(containerId);
     if (!container) return;
     
     const colors = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
     const currentIndex = colors.indexOf(container.color);
     const nextIndex = (currentIndex + 1) % colors.length;
     
-    container.color = colors[nextIndex];
-    container.updatedAt = Date.now();
+    const newColor = colors[nextIndex];
+    Store.updateItem(containerId, { color: newColor });
     
     const element = this.canvasSurface.querySelector(`[data-item-id="${containerId}"]`);
     if (element) {
       colors.forEach(c => element.classList.remove(`color-${c}`));
-      element.classList.add(`color-${container.color}`);
+      element.classList.add(`color-${newColor}`);
     }
   }
 
   /**
    * Attach common item listeners (drag, select, delete, etc.)
    */
-  attachItemListeners(element, item) {
+  attachItemListeners(element, itemId) {
     // Selection
     element.addEventListener('mousedown', (e) => {
       // Don't select if clicking on input/textarea or buttons
@@ -766,20 +887,19 @@ class CanvasApp {
       }
       
       const isShiftClick = e.shiftKey;
-      if (!this.selectedItems.has(item.id)) {
-        this.selectItem(item.id, isShiftClick);
+      if (!this.selectedItems.has(itemId)) {
+        this.selectItem(itemId, isShiftClick);
       }
       
       // Start dragging
-      this.startDrag(e, element, item);
+      this.startDrag(e, element, itemId);
     });
     
     // Title input
     const titleInput = element.querySelector('.item-title');
     if (titleInput) {
       titleInput.addEventListener('input', (e) => {
-        item.title = e.target.value;
-        item.updatedAt = Date.now();
+        Store.updateItem(itemId, { title: e.target.value });
       });
       
       titleInput.addEventListener('mousedown', (e) => {
@@ -791,8 +911,7 @@ class CanvasApp {
     const noteContent = element.querySelector('.note-content');
     if (noteContent) {
       noteContent.addEventListener('input', (e) => {
-        item.content = e.target.value;
-        item.updatedAt = Date.now();
+        Store.updateItem(itemId, { content: e.target.value });
       });
       
       noteContent.addEventListener('mousedown', (e) => {
@@ -805,7 +924,7 @@ class CanvasApp {
     if (deleteBtn) {
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.deleteItem(item.id);
+        this.deleteItem(itemId);
       });
     }
     
@@ -814,7 +933,7 @@ class CanvasApp {
     if (copyBtn) {
       copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.copyItemToClipboard(item.id);
+        this.copyItemToClipboard(itemId);
       });
     }
     
@@ -823,7 +942,7 @@ class CanvasApp {
     resizeHandles.forEach(handle => {
       handle.addEventListener('mousedown', (e) => {
         e.stopPropagation();
-        this.startResize(e, element, item, handle);
+        this.startResize(e, element, itemId, handle);
       });
     });
   }
@@ -831,7 +950,10 @@ class CanvasApp {
   /**
    * Start dragging an item
    */
-  startDrag(e, element, item) {
+  startDrag(e, element, itemId) {
+    const item = Store.getItem(itemId);
+    if (!item) return;
+    
     const startX = e.clientX;
     const startY = e.clientY;
     const startPos = { ...item.position };
@@ -846,16 +968,28 @@ class CanvasApp {
       const newX = Math.round((startPos.x + deltaX) / this.gridSize) * this.gridSize;
       const newY = Math.round((startPos.y + deltaY) / this.gridSize) * this.gridSize;
       
-      item.position.x = Math.max(0, Math.min(newX, this.canvasSize - item.size.width));
-      item.position.y = Math.max(0, Math.min(newY, this.canvasSize - item.size.height));
+      const position = {
+        x: Math.max(0, Math.min(newX, this.canvasSize - item.size.width)),
+        y: Math.max(0, Math.min(newY, this.canvasSize - item.size.height))
+      };
       
-      element.style.left = `${item.position.x}px`;
-      element.style.top = `${item.position.y}px`;
+      // Update DOM immediately for smooth dragging
+      element.style.left = `${position.x}px`;
+      element.style.top = `${position.y}px`;
+      
+      // Store position for save on mouse up
+      element._pendingPosition = position;
     };
     
     const onMouseUp = () => {
       element.classList.remove('dragging');
-      item.updatedAt = Date.now();
+      
+      // Save final position to store
+      if (element._pendingPosition) {
+        Store.updateItem(itemId, { position: element._pendingPosition });
+        delete element._pendingPosition;
+      }
+      
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -867,7 +1001,10 @@ class CanvasApp {
   /**
    * Start resizing an item
    */
-  startResize(e, element, item, handle) {
+  startResize(e, element, itemId, handle) {
+    const item = Store.getItem(itemId);
+    if (!item) return;
+    
     const startX = e.clientX;
     const startY = e.clientY;
     const startSize = { ...item.size };
@@ -882,21 +1019,31 @@ class CanvasApp {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
       
+      const size = { ...item.size };
+      
       if (isRight) {
         const newWidth = Math.max(minWidth, startSize.width + deltaX);
-        item.size.width = Math.round(newWidth / this.gridSize) * this.gridSize;
-        element.style.width = `${item.size.width}px`;
+        size.width = Math.round(newWidth / this.gridSize) * this.gridSize;
+        element.style.width = `${size.width}px`;
       }
       
       if (isBottom) {
         const newHeight = Math.max(minHeight, startSize.height + deltaY);
-        item.size.height = Math.round(newHeight / this.gridSize) * this.gridSize;
-        element.style.height = `${item.size.height}px`;
+        size.height = Math.round(newHeight / this.gridSize) * this.gridSize;
+        element.style.height = `${size.height}px`;
       }
+      
+      // Store size for save on mouse up
+      element._pendingSize = size;
     };
     
     const onMouseUp = () => {
-      item.updatedAt = Date.now();
+      // Save final size to store
+      if (element._pendingSize) {
+        Store.updateItem(itemId, { size: element._pendingSize });
+        delete element._pendingSize;
+      }
+      
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -913,7 +1060,7 @@ class CanvasApp {
     if (element) {
       element.remove();
     }
-    this.items.delete(id);
+    Store.deleteItem(id);
     this.selectedItems.delete(id);
   }
 
@@ -921,7 +1068,7 @@ class CanvasApp {
    * Copy item content to clipboard
    */
   async copyItemToClipboard(id) {
-    const item = this.items.get(id);
+    const item = Store.getItem(id);
     if (!item) return;
     
     let text = '';
