@@ -87,7 +87,11 @@ class CanvasApp {
           <select class="workspace-selector">
             <option value="default">Default Workspace</option>
           </select>
-          <button class="add-note-btn" data-action="add-note">+ Note</button>
+          <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
+          <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
+          <button class="add-btn" data-action="add-note">+ Note</button>
+          <button class="add-btn" data-action="add-checklist">+ Checklist</button>
+          <button class="add-btn" data-action="add-container">+ Container</button>
         </div>
         <div class="toolbar-right">
           <button class="center-btn icon-btn" data-action="center" title="Reset View (Home)">
@@ -192,6 +196,37 @@ class CanvasApp {
     }
   }
 
+  async renameWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const newName = prompt('Enter new workspace name:', currentWorkspace.name);
+    if (newName && newName.trim() && newName.trim() !== currentWorkspace.name) {
+      await Store.renameWorkspace(currentWorkspace.id, newName.trim());
+      await this.populateWorkspaceDropdown();
+    }
+  }
+
+  async deleteWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const workspaces = await Store.getWorkspaces();
+    if (workspaces.length <= 1) {
+      alert('Cannot delete the last workspace.');
+      return;
+    }
+
+    const confirmed = confirm(`Delete workspace "${currentWorkspace.name}"?\n\nThis will permanently delete all items in this workspace.`);
+    if (confirmed) {
+      const switchToId = await Store.deleteWorkspace(currentWorkspace.id);
+      if (switchToId) {
+        await Store.switchWorkspace(switchToId);
+        await this.populateWorkspaceDropdown();
+      }
+    }
+  }
+
   clearCanvas() {
     const items = this.canvasSurface.querySelectorAll('.canvas-item');
     items.forEach(item => item.remove());
@@ -256,6 +291,12 @@ class CanvasApp {
         break;
       case 'close':
         this.handleClose();
+        break;
+      case 'rename-workspace':
+        this.renameWorkspace();
+        break;
+      case 'delete-workspace':
+        this.deleteWorkspace();
         break;
     }
   }
