@@ -157,10 +157,21 @@ const Store = (function() {
   }
 
   /**
+   * Check if chrome.storage API is available
+   */
+  function isStorageAvailable() {
+    return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+  }
+
+  /**
    * Save workspace data to storage
    * @param {object} workspace - Workspace data
    */
   async function saveWorkspaceData(workspace) {
+    if (!isStorageAvailable()) {
+      console.warn('[Store] Chrome storage not available (extension context may be invalidated)');
+      return;
+    }
     try {
       const key = WORKSPACE_PREFIX + workspace.id;
       await chrome.storage.local.set({ [key]: workspace });

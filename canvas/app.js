@@ -35,6 +35,12 @@ class CanvasApp {
 
     await Store.init();
 
+    // Load history for current workspace
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (currentWorkspace) {
+      await HistoryManager.loadHistory(currentWorkspace.id);
+    }
+
     // Load saved viewport or reset to center
     const viewport = Store.getViewport();
     if (viewport.x !== 0 || viewport.y !== 0) {
@@ -57,19 +63,19 @@ class CanvasApp {
   }
 
   subscribeToStoreEvents() {
-    Store.on('workspace:switched', () => {
+    Store.on('workspace:switched', async () => {
+      // Load history for new workspace
+      const currentWorkspace = Store.getCurrentWorkspace();
+      if (currentWorkspace) {
+        await HistoryManager.loadHistory(currentWorkspace.id);
+      }
+
       // Clear canvas and re-render
       this.clearCanvas();
       this.renderAllItems();
 
-      // Restore viewport
-      const viewport = Store.getViewport();
-      if (viewport.x !== 0 || viewport.y !== 0) {
-        this.panOffset = { x: viewport.x, y: viewport.y };
-        this.updateCanvasTransform();
-      } else {
-        this.resetView();
-      }
+      // Restore viewport (reset to center as per phase3.md spec)
+      this.resetView();
 
       // Update dropdown selection
       this.updateWorkspaceDropdownSelection();
@@ -94,6 +100,8 @@ class CanvasApp {
           <button class="add-btn" data-action="add-container">+ Container</button>
         </div>
         <div class="toolbar-right">
+          <button class="undo-btn icon-btn" data-action="undo" title="Undo (Ctrl+Z)">↩️</button>
+          <button class="redo-btn icon-btn" data-action="redo" title="Redo (Ctrl+Y)">↪️</button>
           <button class="center-btn icon-btn" data-action="center" title="Reset View (Home)">
             <span>⌂</span>
           </button>
@@ -119,8 +127,27 @@ class CanvasApp {
   }
 
   attachEventListeners() {
-    // Keyboard events
+    // Keyboard events on wrapper
     this.wrapper.addEventListener('keydown', this.handleKeyDown);
+
+    // Capture Ctrl+Z/Y at document level when overlay is visible
+    this._documentKeyHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            this.redo();
+          } else {
+            this.undo();
+          }
+        } else {
+          this.redo();
+        }
+      }
+    };
+    document.addEventListener('keydown', this._documentKeyHandler, true); // Use capture phase
 
     // Toolbar button clicks (delegated)
     this.toolbar.addEventListener('click', (e) => {
@@ -219,12 +246,80 @@ class CanvasApp {
 
     const confirmed = confirm(`Delete workspace "${currentWorkspace.name}"?\n\nThis will permanently delete all items in this workspace.`);
     if (confirmed) {
+      // Delete associated history
+      await HistoryManager.deleteWorkspaceHistory(currentWorkspace.id);
+
       const switchToId = await Store.deleteWorkspace(currentWorkspace.id);
       if (switchToId) {
         await Store.switchWorkspace(switchToId);
         await this.populateWorkspaceDropdown();
       }
     }
+  }
+
+  /**
+   * Push current state to history stack
+   */
+  pushHistory() {
+    const items = Store.getAllItems();
+    HistoryManager.push(items);
+  }
+
+  /**
+   * Debounced push for text changes
+   */
+  pushHistoryDebounced() {
+    if (this._historyDebounceTimer) {
+      clearTimeout(this._historyDebounceTimer);
+    }
+    this._historyDebounceTimer = setTimeout(() => {
+      this.pushHistory();
+      this._historyDebounceTimer = null;
+    }, 1000);
+  }
+
+  /**
+   * Undo last action
+   */
+  undo() {
+    const currentItems = Store.getAllItems();
+    const previousState = HistoryManager.undo(currentItems);
+
+    if (previousState) {
+      this.restoreState(previousState);
+    }
+  }
+
+  /**
+   * Redo last undone action
+   */
+  redo() {
+    const currentItems = Store.getAllItems();
+    const nextState = HistoryManager.redo(currentItems);
+
+    if (nextState) {
+      this.restoreState(nextState);
+    }
+  }
+
+  /**
+   * Restore state from history
+   */
+  restoreState(items) {
+    HistoryManager.setRestoring(true);
+
+    // Get current workspace and replace items
+    const workspace = Store.getCurrentWorkspace();
+    if (workspace) {
+      workspace.items = items;
+      Store.saveNow();
+    }
+
+    // Re-render canvas
+    this.clearCanvas();
+    this.renderAllItems();
+
+    HistoryManager.setRestoring(false);
   }
 
   clearCanvas() {
@@ -247,7 +342,25 @@ class CanvasApp {
   }
 
   handleKeyDown(e) {
-    // Ignore if typing in an input
+    // Handle Ctrl+Z / Ctrl+Y even in inputs (but not during text composition)
+    if ((e.ctrlKey || e.metaKey) && !e.isComposing) {
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.redo();
+        } else {
+          this.undo();
+        }
+        return;
+      }
+      if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
+    }
+
+    // Ignore other keys if typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
       if (e.key === 'Escape') {
         e.target.blur();
@@ -297,6 +410,12 @@ class CanvasApp {
         break;
       case 'delete-workspace':
         this.deleteWorkspace();
+        break;
+      case 'undo':
+        this.undo();
+        break;
+      case 'redo':
+        this.redo();
         break;
     }
   }
@@ -447,6 +566,9 @@ class CanvasApp {
   }
 
   addNote() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
 
     const note = Store.createItem('note', {
@@ -498,6 +620,9 @@ class CanvasApp {
   }
 
   addChecklist() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
 
     const checklist = Store.createItem('checklist', {
@@ -614,6 +739,9 @@ class CanvasApp {
   }
 
   addChecklistItem(checklistId) {
+    // Save state before adding checklist item
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
 
@@ -640,6 +768,9 @@ class CanvasApp {
   }
 
   toggleChecklistItem(checklistId, itemId, completed) {
+    // Save state before toggling
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
 
@@ -663,10 +794,14 @@ class CanvasApp {
     if (item) {
       item.text = text;
       Store.updateItem(checklistId, { items: checklist.items });
+      this.pushHistoryDebounced();
     }
   }
 
   deleteChecklistItem(checklistId, itemId) {
+    // Save state before deleting checklist item
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
 
@@ -682,6 +817,9 @@ class CanvasApp {
 
 
   toggleChecklistItemNesting(checklistId, itemId, indent) {
+    // Save state before changing nesting
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
 
@@ -705,6 +843,9 @@ class CanvasApp {
   }
 
   addContainer() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
 
     const colors = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
@@ -771,6 +912,9 @@ class CanvasApp {
   }
 
   cycleContainerColor(containerId) {
+    // Save state before changing color
+    this.pushHistory();
+
     const container = Store.getItem(containerId);
     if (!container) return;
 
@@ -810,6 +954,7 @@ class CanvasApp {
     if (titleInput) {
       titleInput.addEventListener('input', (e) => {
         Store.updateItem(itemId, { title: e.target.value });
+        this.pushHistoryDebounced();
       });
 
       titleInput.addEventListener('mousedown', (e) => {
@@ -821,6 +966,7 @@ class CanvasApp {
     if (noteContent) {
       noteContent.addEventListener('input', (e) => {
         Store.updateItem(itemId, { content: e.target.value });
+        this.pushHistoryDebounced();
       });
 
       noteContent.addEventListener('mousedown', (e) => {
@@ -856,6 +1002,9 @@ class CanvasApp {
   startDrag(e, element, itemId) {
     const item = Store.getItem(itemId);
     if (!item) return;
+
+    // Save state before drag starts
+    this.pushHistory();
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -905,6 +1054,9 @@ class CanvasApp {
     const item = Store.getItem(itemId);
     if (!item) return;
 
+    // Save state before resize starts
+    this.pushHistory();
+
     const startX = e.clientX;
     const startY = e.clientY;
     const startSize = { ...item.size };
@@ -953,6 +1105,9 @@ class CanvasApp {
   }
 
   deleteItem(id) {
+    // Save state before deleting
+    this.pushHistory();
+
     const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
     if (element) {
       element.remove();
