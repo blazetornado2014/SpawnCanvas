@@ -157,10 +157,21 @@ const Store = (function() {
   }
 
   /**
+   * Check if chrome.storage API is available
+   */
+  function isStorageAvailable() {
+    return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+  }
+
+  /**
    * Save workspace data to storage
    * @param {object} workspace - Workspace data
    */
   async function saveWorkspaceData(workspace) {
+    if (!isStorageAvailable()) {
+      console.warn('[Store] Chrome storage not available (extension context may be invalidated)');
+      return;
+    }
     try {
       const key = WORKSPACE_PREFIX + workspace.id;
       await chrome.storage.local.set({ [key]: workspace });
@@ -190,6 +201,60 @@ const Store = (function() {
     
     emit('workspace:created', workspace);
     return workspace;
+  }
+
+  /**
+   * Rename a workspace
+   * @param {string} id - Workspace ID
+   * @param {string} newName - New name for the workspace
+   * @returns {Promise<boolean>} Success
+   */
+  async function renameWorkspace(id, newName) {
+    const workspace = await loadWorkspaceData(id);
+    if (!workspace) return false;
+
+    workspace.name = newName;
+    workspace.updatedAt = Date.now();
+    await saveWorkspaceData(workspace);
+
+    // Update current workspace if it's the one being renamed
+    if (currentWorkspace && currentWorkspace.id === id) {
+      currentWorkspace.name = newName;
+    }
+
+    emit('workspace:renamed', { id, name: newName });
+    return true;
+  }
+
+  /**
+   * Delete a workspace
+   * @param {string} id - Workspace ID to delete
+   * @returns {Promise<string|null>} ID of workspace to switch to, or null if failed
+   */
+  async function deleteWorkspace(id) {
+    const list = await getWorkspaceList();
+
+    // Don't delete if it's the only workspace
+    if (list.length <= 1) {
+      console.warn('[Store] Cannot delete the last workspace');
+      return null;
+    }
+
+    // Remove from list
+    const index = list.indexOf(id);
+    if (index === -1) return null;
+
+    list.splice(index, 1);
+    await chrome.storage.local.set({ [WORKSPACES_LIST_KEY]: list });
+
+    // Remove workspace data
+    const key = WORKSPACE_PREFIX + id;
+    await chrome.storage.local.remove(key);
+
+    emit('workspace:deleted', { id });
+
+    // Return the first available workspace to switch to
+    return list[0];
   }
 
   /**
@@ -488,6 +553,8 @@ const Store = (function() {
     getWorkspaceList,
     getWorkspaces,
     createWorkspace,
+    renameWorkspace,
+    deleteWorkspace,
     switchWorkspace,
     getCurrentWorkspace,
 

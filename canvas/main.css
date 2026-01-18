@@ -198,15 +198,24 @@
   right: 0;
   bottom: 0;
   overflow: hidden;
-  cursor: grab;
-}
-
-.canvas-area:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
 .canvas-area.panning {
   cursor: grabbing;
+}
+
+.canvas-area.pan-mode {
+  cursor: grab;
+}
+
+.canvas-area.pan-mode:active,
+.canvas-area.pan-mode.panning {
+  cursor: grabbing;
+}
+
+.canvas-area.selecting {
+  cursor: crosshair;
 }
 
 /* ============================================
@@ -298,6 +307,27 @@
   opacity: 0.9;
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dragging);
+}
+
+/* Note layout - flex column to fill height */
+.canvas-item.note {
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-item.note .item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-item.note .note-content {
+  flex: 1 1 0;
+  min-height: 0 !important;
+  height: 0;
+  resize: none;
 }
 
 /* Item header */
@@ -690,4 +720,21 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================
+   SELECTION BOX
+   ============================================ */
+.selection-box {
+  position: absolute;
+  border: 2px dashed var(--accent);
+  background: rgba(74, 158, 255, 0.1);
+  pointer-events: none;
+  z-index: var(--z-dragging);
+}
+
+/* Highlight during selection drag */
+.canvas-item.selection-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.3);
 }

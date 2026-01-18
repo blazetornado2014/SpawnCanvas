@@ -3,10 +3,6 @@
  * Initializes the canvas application within the Shadow DOM
  */
 
-/**
- * CanvasApp Class
- * Main application controller
- */
 class CanvasApp {
   constructor(shadowRoot) {
     this.shadowRoot = shadowRoot;
@@ -14,37 +10,41 @@ class CanvasApp {
     this.canvasArea = null;
     this.canvasSurface = null;
     this.workspaceSelector = null;
-    
+
     // Pan state
     this.panOffset = { x: 0, y: 0 };
     this.isPanning = false;
     this.panStart = { x: 0, y: 0 };
-    
+    this.isSpaceDown = false; // For Space+Drag panning
+
     // Selection state
     this.selectedItems = new Set();
-    
-    // Canvas dimensions
+    this.isSelecting = false;
+    this.selectionStart = { x: 0, y: 0 };
+    this.selectionBox = null;
+
     this.canvasSize = 5000;
     this.gridSize = 20;
-    
-    // Bind methods
+
     this.handleKeyDown = this.handleKeyDown.bind(this);
     this.handleCanvasMouseDown = this.handleCanvasMouseDown.bind(this);
     this.handleCanvasMouseMove = this.handleCanvasMouseMove.bind(this);
     this.handleCanvasMouseUp = this.handleCanvasMouseUp.bind(this);
   }
 
-  /**
-   * Initialize the application
-   */
   async init() {
     this.render();
     this.cacheElements();
     this.attachEventListeners();
-    
-    // Initialize store and load workspace
+
     await Store.init();
-    
+
+    // Load history for current workspace
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (currentWorkspace) {
+      await HistoryManager.loadHistory(currentWorkspace.id);
+    }
+
     // Load saved viewport or reset to center
     const viewport = Store.getViewport();
     if (viewport.x !== 0 || viewport.y !== 0) {
@@ -53,61 +53,59 @@ class CanvasApp {
     } else {
       this.resetView();
     }
-    
+
     // Render existing items
     this.renderAllItems();
-    
+
     // Populate workspace dropdown
     await this.populateWorkspaceDropdown();
-    
+
     // Subscribe to store events
     this.subscribeToStoreEvents();
-    
+
     console.log('[SpawnCanvas] App initialized');
   }
 
-  /**
-   * Subscribe to store events for reactive updates
-   */
   subscribeToStoreEvents() {
-    Store.on('workspace:switched', () => {
+    Store.on('workspace:switched', async () => {
+      // Load history for new workspace
+      const currentWorkspace = Store.getCurrentWorkspace();
+      if (currentWorkspace) {
+        await HistoryManager.loadHistory(currentWorkspace.id);
+      }
+
       // Clear canvas and re-render
       this.clearCanvas();
       this.renderAllItems();
-      
-      // Restore viewport
-      const viewport = Store.getViewport();
-      if (viewport.x !== 0 || viewport.y !== 0) {
-        this.panOffset = { x: viewport.x, y: viewport.y };
-        this.updateCanvasTransform();
-      } else {
-        this.resetView();
-      }
-      
+
+      // Restore viewport (reset to center as per phase3.md spec)
+      this.resetView();
+
       // Update dropdown selection
       this.updateWorkspaceDropdownSelection();
     });
   }
 
-  /**
-   * Render the main application structure
-   */
   render() {
     this.wrapper = document.createElement('div');
     this.wrapper.className = 'spawn-canvas-wrapper';
     this.wrapper.setAttribute('tabindex', '0');
-    
+
     this.wrapper.innerHTML = `
       <div class="toolbar">
         <div class="toolbar-left">
           <select class="workspace-selector">
             <option value="default">Default Workspace</option>
           </select>
-          <button class="add-note-btn" data-action="add-note">+ Note</button>
-          <button class="add-checklist-btn" data-action="add-checklist">+ Checklist</button>
-          <button class="add-container-btn" data-action="add-container">+ Container</button>
+          <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
+          <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
+          <button class="add-btn" data-action="add-note">+ Note</button>
+          <button class="add-btn" data-action="add-checklist">+ Checklist</button>
+          <button class="add-btn" data-action="add-container">+ Container</button>
         </div>
         <div class="toolbar-right">
+          <button class="undo-btn icon-btn" data-action="undo" title="Undo (Ctrl+Z)">↩️</button>
+          <button class="redo-btn icon-btn" data-action="redo" title="Redo (Ctrl+Y)">↪️</button>
           <button class="center-btn icon-btn" data-action="center" title="Reset View (Home)">
             <span>⌂</span>
           </button>
@@ -121,13 +119,10 @@ class CanvasApp {
         </div>
       </div>
     `;
-    
+
     this.shadowRoot.appendChild(this.wrapper);
   }
 
-  /**
-   * Cache DOM element references
-   */
   cacheElements() {
     this.canvasArea = this.wrapper.querySelector('.canvas-area');
     this.canvasSurface = this.wrapper.querySelector('.canvas-surface');
@@ -135,13 +130,48 @@ class CanvasApp {
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
   }
 
-  /**
-   * Attach event listeners
-   */
   attachEventListeners() {
-    // Keyboard events
+    // Keyboard events on wrapper
     this.wrapper.addEventListener('keydown', this.handleKeyDown);
-    
+
+    // Capture Ctrl+Z/Y at document level when overlay is visible
+    this._documentKeyHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            this.redo();
+          } else {
+            this.undo();
+          }
+        } else {
+          this.redo();
+        }
+      }
+    };
+    document.addEventListener('keydown', this._documentKeyHandler, true); // Use capture phase
+
+    // Track Space key for pan mode
+    this._spaceKeyDownHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if (e.code === 'Space' && !e.target.matches('input, textarea')) {
+        e.preventDefault();
+        this.isSpaceDown = true;
+        this.canvasArea.classList.add('pan-mode');
+      }
+    };
+    this._spaceKeyUpHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if (e.code === 'Space') {
+        this.isSpaceDown = false;
+        this.canvasArea.classList.remove('pan-mode');
+      }
+    };
+    document.addEventListener('keydown', this._spaceKeyDownHandler);
+    document.addEventListener('keyup', this._spaceKeyUpHandler);
+
     // Toolbar button clicks (delegated)
     this.toolbar.addEventListener('click', (e) => {
       const action = e.target.closest('[data-action]')?.dataset.action;
@@ -149,18 +179,18 @@ class CanvasApp {
         this.handleToolbarAction(action);
       }
     });
-    
+
     // Workspace selector
     this.workspaceSelector.addEventListener('change', (e) => {
       this.handleWorkspaceChange(e.target.value);
     });
-    
+
     // Canvas panning
     this.canvasArea.addEventListener('mousedown', this.handleCanvasMouseDown);
     this.canvasArea.addEventListener('mousemove', this.handleCanvasMouseMove);
     this.canvasArea.addEventListener('mouseup', this.handleCanvasMouseUp);
     this.canvasArea.addEventListener('mouseleave', this.handleCanvasMouseUp);
-    
+
     // Click on canvas to deselect
     this.canvasSurface.addEventListener('click', (e) => {
       if (e.target === this.canvasSurface || e.target.classList.contains('center-anchor')) {
@@ -169,15 +199,12 @@ class CanvasApp {
     });
   }
 
-  /**
-   * Populate workspace dropdown with all workspaces
-   */
   async populateWorkspaceDropdown() {
     const workspaces = await Store.getWorkspaces();
     const currentWorkspace = Store.getCurrentWorkspace();
-    
+
     this.workspaceSelector.innerHTML = '';
-    
+
     workspaces.forEach(ws => {
       const option = document.createElement('option');
       option.value = ws.id;
@@ -187,7 +214,7 @@ class CanvasApp {
       }
       this.workspaceSelector.appendChild(option);
     });
-    
+
     // Add "New Workspace" option
     const newOption = document.createElement('option');
     newOption.value = '__new__';
@@ -195,9 +222,6 @@ class CanvasApp {
     this.workspaceSelector.appendChild(newOption);
   }
 
-  /**
-   * Update dropdown selection to match current workspace
-   */
   updateWorkspaceDropdownSelection() {
     const currentWorkspace = Store.getCurrentWorkspace();
     if (currentWorkspace) {
@@ -205,9 +229,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Handle workspace change from dropdown
-   */
   async handleWorkspaceChange(value) {
     if (value === '__new__') {
       // Prompt for new workspace name
@@ -225,18 +246,111 @@ class CanvasApp {
     }
   }
 
+  async renameWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const newName = prompt('Enter new workspace name:', currentWorkspace.name);
+    if (newName && newName.trim() && newName.trim() !== currentWorkspace.name) {
+      await Store.renameWorkspace(currentWorkspace.id, newName.trim());
+      await this.populateWorkspaceDropdown();
+    }
+  }
+
+  async deleteWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const workspaces = await Store.getWorkspaces();
+    if (workspaces.length <= 1) {
+      alert('Cannot delete the last workspace.');
+      return;
+    }
+
+    const confirmed = confirm(`Delete workspace "${currentWorkspace.name}"?\n\nThis will permanently delete all items in this workspace.`);
+    if (confirmed) {
+      // Delete associated history
+      await HistoryManager.deleteWorkspaceHistory(currentWorkspace.id);
+
+      const switchToId = await Store.deleteWorkspace(currentWorkspace.id);
+      if (switchToId) {
+        await Store.switchWorkspace(switchToId);
+        await this.populateWorkspaceDropdown();
+      }
+    }
+  }
+
   /**
-   * Clear all items from canvas
+   * Push current state to history stack
    */
+  pushHistory() {
+    const items = Store.getAllItems();
+    HistoryManager.push(items);
+  }
+
+  /**
+   * Debounced push for text changes
+   */
+  pushHistoryDebounced() {
+    if (this._historyDebounceTimer) {
+      clearTimeout(this._historyDebounceTimer);
+    }
+    this._historyDebounceTimer = setTimeout(() => {
+      this.pushHistory();
+      this._historyDebounceTimer = null;
+    }, 1000);
+  }
+
+  /**
+   * Undo last action
+   */
+  undo() {
+    const currentItems = Store.getAllItems();
+    const previousState = HistoryManager.undo(currentItems);
+
+    if (previousState) {
+      this.restoreState(previousState);
+    }
+  }
+
+  /**
+   * Redo last undone action
+   */
+  redo() {
+    const currentItems = Store.getAllItems();
+    const nextState = HistoryManager.redo(currentItems);
+
+    if (nextState) {
+      this.restoreState(nextState);
+    }
+  }
+
+  /**
+   * Restore state from history
+   */
+  restoreState(items) {
+    HistoryManager.setRestoring(true);
+
+    // Get current workspace and replace items
+    const workspace = Store.getCurrentWorkspace();
+    if (workspace) {
+      workspace.items = items;
+      Store.saveNow();
+    }
+
+    // Re-render canvas
+    this.clearCanvas();
+    this.renderAllItems();
+
+    HistoryManager.setRestoring(false);
+  }
+
   clearCanvas() {
     const items = this.canvasSurface.querySelectorAll('.canvas-item');
     items.forEach(item => item.remove());
     this.selectedItems.clear();
   }
 
-  /**
-   * Render all items from store
-   */
   renderAllItems() {
     const items = Store.getAllItems();
     items.forEach(item => {
@@ -250,11 +364,26 @@ class CanvasApp {
     });
   }
 
-  /**
-   * Handle keyboard shortcuts
-   */
   handleKeyDown(e) {
-    // Ignore if typing in an input
+    // Handle Ctrl+Z / Ctrl+Y even in inputs (but not during text composition)
+    if ((e.ctrlKey || e.metaKey) && !e.isComposing) {
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          this.redo();
+        } else {
+          this.undo();
+        }
+        return;
+      }
+      if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
+    }
+
+    // Ignore other keys if typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
       if (e.key === 'Escape') {
         e.target.blur();
@@ -282,9 +411,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Handle toolbar button actions
-   */
   handleToolbarAction(action) {
     switch (action) {
       case 'add-note':
@@ -302,95 +428,290 @@ class CanvasApp {
       case 'close':
         this.handleClose();
         break;
+      case 'rename-workspace':
+        this.renameWorkspace();
+        break;
+      case 'delete-workspace':
+        this.deleteWorkspace();
+        break;
+      case 'undo':
+        this.undo();
+        break;
+      case 'redo':
+        this.redo();
+        break;
     }
   }
 
-  /**
-   * Handle canvas mouse down for panning
-   */
   handleCanvasMouseDown(e) {
-    // Only pan if clicking on canvas background
-    if (e.target === this.canvasArea || 
-        e.target === this.canvasSurface || 
-        e.target.classList.contains('center-anchor')) {
+    // Only act if clicking on canvas background
+    const isCanvasBackground = e.target === this.canvasArea ||
+      e.target === this.canvasSurface ||
+      e.target.classList.contains('center-anchor');
+
+    if (!isCanvasBackground) return;
+
+    // Space+Drag = Pan
+    if (this.isSpaceDown) {
       this.isPanning = true;
       this.panStart = {
         x: e.clientX - this.panOffset.x,
         y: e.clientY - this.panOffset.y
       };
       this.canvasArea.classList.add('panning');
+    } else {
+      // Regular drag on empty space = Selection box
+      this.startSelection(e);
     }
   }
 
-  /**
-   * Handle canvas mouse move for panning
-   */
-  handleCanvasMouseMove(e) {
-    if (!this.isPanning) return;
-    
-    this.panOffset = {
-      x: e.clientX - this.panStart.x,
-      y: e.clientY - this.panStart.y
+  startSelection(e) {
+    this.isSelecting = true;
+
+    // Get mouse position relative to canvas surface
+    const surfaceRect = this.canvasSurface.getBoundingClientRect();
+    this.selectionStart = {
+      x: e.clientX - surfaceRect.left,
+      y: e.clientY - surfaceRect.top
     };
-    
-    this.updateCanvasTransform();
+
+    // Create selection box element
+    this.selectionBox = document.createElement('div');
+    this.selectionBox.className = 'selection-box';
+    this.selectionBox.style.left = `${this.selectionStart.x}px`;
+    this.selectionBox.style.top = `${this.selectionStart.y}px`;
+    this.selectionBox.style.width = '0px';
+    this.selectionBox.style.height = '0px';
+    this.canvasSurface.appendChild(this.selectionBox);
+
+    this.canvasArea.classList.add('selecting');
   }
 
-  /**
-   * Handle canvas mouse up - stop panning
-   */
-  handleCanvasMouseUp() {
+  handleCanvasMouseMove(e) {
+    if (this.isPanning) {
+      this.panOffset = {
+        x: e.clientX - this.panStart.x,
+        y: e.clientY - this.panStart.y
+      };
+      this.updateCanvasTransform();
+    } else if (this.isSelecting) {
+      this.updateSelection(e);
+    }
+  }
+
+  updateSelection(e) {
+    if (!this.selectionBox) return;
+
+    const surfaceRect = this.canvasSurface.getBoundingClientRect();
+    const currentX = e.clientX - surfaceRect.left;
+    const currentY = e.clientY - surfaceRect.top;
+
+    // Calculate box dimensions (handle negative drag)
+    const left = Math.min(this.selectionStart.x, currentX);
+    const top = Math.min(this.selectionStart.y, currentY);
+    const width = Math.abs(currentX - this.selectionStart.x);
+    const height = Math.abs(currentY - this.selectionStart.y);
+
+    this.selectionBox.style.left = `${left}px`;
+    this.selectionBox.style.top = `${top}px`;
+    this.selectionBox.style.width = `${width}px`;
+    this.selectionBox.style.height = `${height}px`;
+
+    // Live selection feedback - highlight items that intersect
+    this.updateSelectionHighlight({ left, top, width, height });
+  }
+
+  updateSelectionHighlight(boxRect) {
+    const items = Store.getAllItems();
+    const shiftHeld = false; // We'll check this on mouse up for final selection
+
+    items.forEach(item => {
+      const element = this.canvasSurface.querySelector(`[data-item-id="${item.id}"]`);
+      if (!element) return;
+
+      const itemRect = {
+        left: item.position.x,
+        top: item.position.y,
+        width: item.size.width,
+        height: item.size.height
+      };
+
+      if (this.checkIntersection(boxRect, itemRect)) {
+        element.classList.add('selection-highlight');
+      } else {
+        element.classList.remove('selection-highlight');
+      }
+    });
+  }
+
+  checkIntersection(boxA, boxB) {
+    // "Touch" intersection - any overlap counts
+    return !(
+      boxA.left > boxB.left + boxB.width ||
+      boxA.left + boxA.width < boxB.left ||
+      boxA.top > boxB.top + boxB.height ||
+      boxA.top + boxA.height < boxB.top
+    );
+  }
+
+  handleCanvasMouseUp(e) {
     if (this.isPanning) {
       this.isPanning = false;
       this.canvasArea.classList.remove('panning');
-      
+
       // Save viewport position
       Store.updateViewport(this.panOffset.x, this.panOffset.y);
+    } else if (this.isSelecting) {
+      this.endSelection(e);
     }
   }
 
+  endSelection(e) {
+    if (!this.selectionBox) {
+      this.isSelecting = false;
+      return;
+    }
+
+    // Get final selection box dimensions
+    const boxRect = {
+      left: parseFloat(this.selectionBox.style.left),
+      top: parseFloat(this.selectionBox.style.top),
+      width: parseFloat(this.selectionBox.style.width),
+      height: parseFloat(this.selectionBox.style.height)
+    };
+
+    // Remove selection box element
+    this.selectionBox.remove();
+    this.selectionBox = null;
+    this.isSelecting = false;
+    this.canvasArea.classList.remove('selecting');
+
+    // Clear highlight classes
+    const highlighted = this.canvasSurface.querySelectorAll('.selection-highlight');
+    highlighted.forEach(el => el.classList.remove('selection-highlight'));
+
+    // If box is too small (just a click), treat as deselect
+    if (boxRect.width < 5 && boxRect.height < 5) {
+      if (!e.shiftKey) {
+        this.deselectAll();
+      }
+      return;
+    }
+
+    // Find all items that intersect with the selection box
+    const items = Store.getAllItems();
+    const selectedIds = [];
+
+    items.forEach(item => {
+      const itemRect = {
+        left: item.position.x,
+        top: item.position.y,
+        width: item.size.width,
+        height: item.size.height
+      };
+
+      if (this.checkIntersection(boxRect, itemRect)) {
+        selectedIds.push(item.id);
+      }
+    });
+
+    // Apply selection
+    if (e.shiftKey) {
+      // Add to existing selection
+      selectedIds.forEach(id => {
+        this.selectedItems.add(id);
+        const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+        if (element) {
+          element.classList.add('selected');
+          this.bringToFront(element);
+        }
+      });
+    } else {
+      // Replace selection
+      this.deselectAll();
+      selectedIds.forEach(id => {
+        this.selectedItems.add(id);
+        const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+        if (element) {
+          element.classList.add('selected');
+          this.bringToFront(element);
+        }
+      });
+    }
+  }
+
+
   /**
-   * Update canvas surface transform
+   * Auto-resize checklist to fit content
    */
+  autoResizeChecklist(id) {
+    const checklistElement = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+    if (!checklistElement) return;
+
+    const checklistContent = checklistElement.querySelector('.item-content');
+    if (!checklistContent) return;
+
+    // Get current height and scroll height
+    const currentHeight = parseFloat(checklistElement.style.height);
+    const headerHeight = 37; // Approx header height
+    const padding = 24; // Top+bottom padding
+    const contentHeight = checklistContent.scrollHeight;
+
+    // Calculate required height based on content
+    const minHeight = 100; // Minimum height
+    const requiredHeight = contentHeight + headerHeight + 5; // +5 buffer
+
+    // Resize if content is larger than current container
+    if (requiredHeight > currentHeight) {
+      const newHeight = Math.max(requiredHeight, minHeight);
+      checklistElement.style.height = `${newHeight}px`;
+
+      // Update store
+      const item = Store.getItem(id);
+      if (item) {
+        item.size.height = newHeight;
+        Store.updateItem(id, { size: item.size });
+      }
+    }
+  }
+
+  bringToFront(element) {
+    // Re-append to parent to bring to front (DOM order = z-index for same z-index value)
+    if (element && element.parentNode) {
+      element.parentNode.appendChild(element);
+    }
+  }
+
   updateCanvasTransform() {
-    this.canvasSurface.style.transform = 
+    this.canvasSurface.style.transform =
       `translate(${this.panOffset.x}px, ${this.panOffset.y}px)`;
   }
 
-  /**
-   * Reset view to center of canvas
-   */
   resetView() {
     const areaRect = this.canvasArea.getBoundingClientRect();
     const centerX = this.canvasSize / 2;
     const centerY = this.canvasSize / 2;
-    
+
     this.panOffset = {
       x: -(centerX - areaRect.width / 2),
       y: -(centerY - areaRect.height / 2)
     };
-    
+
     this.updateCanvasTransform();
-    
+
     // Save viewport position
     Store.updateViewport(this.panOffset.x, this.panOffset.y);
   }
 
-  /**
-   * Close the overlay
-   */
   handleClose() {
     // Save before closing
     Store.saveNow();
-    
+
     // Dispatch event to overlay manager
     const event = new CustomEvent('spawn-canvas-close', { bubbles: true, composed: true });
     this.wrapper.dispatchEvent(event);
   }
 
-  /**
-   * Deselect all items
-   */
   deselectAll() {
     this.selectedItems.forEach(id => {
       const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
@@ -401,108 +722,104 @@ class CanvasApp {
     this.selectedItems.clear();
   }
 
-  /**
-   * Delete selected items
-   */
   deleteSelectedItems() {
     if (this.selectedItems.size === 0) return;
-    
+
     this.selectedItems.forEach(id => {
       this.deleteItem(id);
     });
     this.selectedItems.clear();
   }
 
-  /**
-   * Navigate through items (1 = prev, 2 = next)
-   */
   navigateItems(direction) {
     const items = Store.getAllItems();
     if (items.length === 0) return;
-    
+
     const itemIds = items.map(item => item.id);
-    
+
     let currentIndex = -1;
     if (this.selectedItems.size === 1) {
       const selectedId = Array.from(this.selectedItems)[0];
       currentIndex = itemIds.indexOf(selectedId);
     }
-    
+
     let nextIndex = currentIndex + direction;
     if (nextIndex < 0) nextIndex = itemIds.length - 1;
     if (nextIndex >= itemIds.length) nextIndex = 0;
-    
+
     this.deselectAll();
     this.selectItem(itemIds[nextIndex]);
     this.panToItem(itemIds[nextIndex]);
   }
 
-  /**
-   * Select an item
-   */
   selectItem(id, addToSelection = false) {
     if (!addToSelection) {
       this.deselectAll();
     }
-    
+
+    // If Shift+Click on already selected item, toggle it off
+    if (addToSelection && this.selectedItems.has(id)) {
+      this.selectedItems.delete(id);
+      const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+      if (element) {
+        element.classList.remove('selected');
+      }
+      return;
+    }
+
     this.selectedItems.add(id);
     const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
     if (element) {
       element.classList.add('selected');
+      this.bringToFront(element);
     }
   }
 
-  /**
-   * Pan canvas to show an item
-   */
   panToItem(id) {
     const item = Store.getItem(id);
     if (!item) return;
-    
+
     const areaRect = this.canvasArea.getBoundingClientRect();
-    
+
     // Center the item in the viewport
     this.panOffset = {
       x: -(item.position.x + item.size.width / 2 - areaRect.width / 2),
       y: -(item.position.y + item.size.height / 2 - areaRect.height / 2)
     };
-    
+
     this.updateCanvasTransform();
     Store.updateViewport(this.panOffset.x, this.panOffset.y);
   }
 
-  /**
-   * Get position for new item (center of current view)
-   */
   getNewItemPosition() {
     const areaRect = this.canvasArea.getBoundingClientRect();
     const viewCenterX = -this.panOffset.x + areaRect.width / 2;
     const viewCenterY = -this.panOffset.y + areaRect.height / 2;
-    
+
     // Snap to grid
     const x = Math.round((viewCenterX - 100) / this.gridSize) * this.gridSize;
     const y = Math.round((viewCenterY - 75) / this.gridSize) * this.gridSize;
-    
+
     return { x, y };
   }
 
-  /**
-   * Add a new note
-   */
   addNote() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
-    
+
     const note = Store.createItem('note', {
       title: '',
       content: '',
       position,
       size: { width: 250, height: 180 }
     });
-    
+
     if (note) {
       this.renderNote(note);
       this.selectItem(note.id);
-      
+
       // Focus the title input
       setTimeout(() => {
         const titleInput = this.canvasSurface.querySelector(`[data-item-id="${note.id}"] .item-title`);
@@ -511,9 +828,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Render a note element
-   */
   renderNote(note) {
     const element = document.createElement('div');
     element.className = 'canvas-item note';
@@ -522,7 +836,7 @@ class CanvasApp {
     element.style.top = `${note.position.y}px`;
     element.style.width = `${note.size.width}px`;
     element.style.height = `${note.size.height}px`;
-    
+
     element.innerHTML = `
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Note title..." value="${this.escapeHtml(note.title)}">
@@ -538,28 +852,28 @@ class CanvasApp {
       <div class="resize-handle edge e"></div>
       <div class="resize-handle edge s"></div>
     `;
-    
+
     this.attachItemListeners(element, note.id);
     this.canvasSurface.appendChild(element);
   }
 
-  /**
-   * Add a new checklist
-   */
   addChecklist() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
-    
+
     const checklist = Store.createItem('checklist', {
       title: '',
       items: [],
       position,
       size: { width: 280, height: 200 }
     });
-    
+
     if (checklist) {
       this.renderChecklist(checklist);
       this.selectItem(checklist.id);
-      
+
       // Focus the title input
       setTimeout(() => {
         const titleInput = this.canvasSurface.querySelector(`[data-item-id="${checklist.id}"] .item-title`);
@@ -568,9 +882,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Render a checklist element
-   */
   renderChecklist(checklist) {
     const element = document.createElement('div');
     element.className = 'canvas-item checklist';
@@ -579,7 +890,7 @@ class CanvasApp {
     element.style.top = `${checklist.position.y}px`;
     element.style.width = `${checklist.size.width}px`;
     element.style.height = `${checklist.size.height}px`;
-    
+
     element.innerHTML = `
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Checklist title..." value="${this.escapeHtml(checklist.title)}">
@@ -598,18 +909,15 @@ class CanvasApp {
       <div class="resize-handle edge e"></div>
       <div class="resize-handle edge s"></div>
     `;
-    
+
     this.attachItemListeners(element, checklist.id);
     this.attachChecklistListeners(element, checklist.id);
     this.canvasSurface.appendChild(element);
   }
 
-  /**
-   * Render checklist items HTML
-   */
   renderChecklistItems(items) {
     if (!items || items.length === 0) return '';
-    
+
     return items.map(item => `
       <li class="checklist-item ${item.completed ? 'completed' : ''} ${item.nested ? `nested-${item.nested}` : ''}" data-item-id="${item.id}">
         <input type="checkbox" ${item.completed ? 'checked' : ''}>
@@ -619,17 +927,14 @@ class CanvasApp {
     `).join('');
   }
 
-  /**
-   * Attach checklist-specific listeners
-   */
   attachChecklistListeners(element, checklistId) {
     const content = element.querySelector('.item-content');
-    
+
     // Add item button
     content.querySelector('.add-checklist-item').addEventListener('click', () => {
       this.addChecklistItem(checklistId);
     });
-    
+
     // Delegate events for checklist items
     content.addEventListener('change', (e) => {
       if (e.target.type === 'checkbox') {
@@ -638,7 +943,7 @@ class CanvasApp {
         this.toggleChecklistItem(checklistId, itemId, e.target.checked);
       }
     });
-    
+
     content.addEventListener('input', (e) => {
       if (e.target.classList.contains('item-text')) {
         const li = e.target.closest('.checklist-item');
@@ -646,7 +951,7 @@ class CanvasApp {
         this.updateChecklistItemText(checklistId, itemId, e.target.value);
       }
     });
-    
+
     content.addEventListener('click', (e) => {
       if (e.target.classList.contains('item-delete')) {
         const li = e.target.closest('.checklist-item');
@@ -654,7 +959,7 @@ class CanvasApp {
         this.deleteChecklistItem(checklistId, itemId);
       }
     });
-    
+
     // Handle Enter key to add new item
     content.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.classList.contains('item-text')) {
@@ -671,47 +976,54 @@ class CanvasApp {
     });
   }
 
-  /**
-   * Add a new checklist item
-   */
   addChecklistItem(checklistId) {
+    // Save state before adding checklist item
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
-    
+
     const newItem = {
       id: `ci_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       text: '',
       completed: false,
       nested: 0
     };
-    
+
     checklist.items.push(newItem);
     Store.updateItem(checklistId, { items: checklist.items });
-    
+
     // Re-render checklist items
     const element = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"]`);
     const ul = element.querySelector('.checklist-items');
     ul.innerHTML = this.renderChecklistItems(checklist.items);
-    
-    // Focus new item
+
+    // Auto-resize
     setTimeout(() => {
-      const newInput = ul.querySelector(`[data-item-id="${newItem.id}"] .item-text`);
-      if (newInput) newInput.focus();
+      this.autoResizeChecklist(checklistId);
+
+      // Focus the new item
+      const inputs = ul.querySelectorAll('.item-text');
+      if (inputs.length > 0) {
+        inputs[inputs.length - 1].focus();
+      }
     }, 0);
+
+
   }
 
-  /**
-   * Toggle checklist item completion
-   */
   toggleChecklistItem(checklistId, itemId, completed) {
+    // Save state before toggling
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
-    
+
     const item = checklist.items.find(i => i.id === itemId);
     if (item) {
       item.completed = completed;
       Store.updateItem(checklistId, { items: checklist.items });
-      
+
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
       if (li) {
         li.classList.toggle('completed', completed);
@@ -719,44 +1031,47 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Update checklist item text
-   */
   updateChecklistItemText(checklistId, itemId, text) {
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
-    
+
     const item = checklist.items.find(i => i.id === itemId);
     if (item) {
       item.text = text;
       Store.updateItem(checklistId, { items: checklist.items });
+      this.pushHistoryDebounced();
     }
   }
 
-  /**
-   * Delete checklist item
-   */
   deleteChecklistItem(checklistId, itemId) {
+    // Save state before deleting checklist item
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
-    
+
     const index = checklist.items.findIndex(i => i.id === itemId);
     if (index > -1) {
       checklist.items.splice(index, 1);
       Store.updateItem(checklistId, { items: checklist.items });
-      
+
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
-      if (li) li.remove();
+      if (li) {
+        li.remove();
+        // Auto-resize
+        this.autoResizeChecklist(checklistId);
+      }
     }
   }
 
-  /**
-   * Toggle checklist item nesting
-   */
+
   toggleChecklistItemNesting(checklistId, itemId, indent) {
+    // Save state before changing nesting
+    this.pushHistory();
+
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
-    
+
     const item = checklist.items.find(i => i.id === itemId);
     if (item) {
       if (indent && item.nested < 2) {
@@ -765,7 +1080,7 @@ class CanvasApp {
         item.nested = item.nested - 1;
       }
       Store.updateItem(checklistId, { items: checklist.items });
-      
+
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
       if (li) {
         li.classList.remove('nested-1', 'nested-2');
@@ -776,15 +1091,15 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Add a new container
-   */
   addContainer() {
+    // Save state before adding
+    this.pushHistory();
+
     const position = this.getNewItemPosition();
-    
+
     const colors = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
-    
+
     const container = Store.createItem('container', {
       title: '',
       color: randomColor,
@@ -792,11 +1107,11 @@ class CanvasApp {
       size: { width: 350, height: 250 },
       children: []
     });
-    
+
     if (container) {
       this.renderContainer(container);
       this.selectItem(container.id);
-      
+
       // Focus the title input
       setTimeout(() => {
         const titleInput = this.canvasSurface.querySelector(`[data-item-id="${container.id}"] .item-title`);
@@ -805,9 +1120,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Render a container element
-   */
   renderContainer(container) {
     const element = document.createElement('div');
     element.className = `canvas-item container color-${container.color}`;
@@ -816,7 +1128,7 @@ class CanvasApp {
     element.style.top = `${container.position.y}px`;
     element.style.width = `${container.size.width}px`;
     element.style.height = `${container.size.height}px`;
-    
+
     element.innerHTML = `
       <div class="container-color-bar"></div>
       <div class="item-header">
@@ -833,38 +1145,35 @@ class CanvasApp {
       <div class="resize-handle edge e"></div>
       <div class="resize-handle edge s"></div>
     `;
-    
+
     this.attachItemListeners(element, container.id);
     this.attachContainerListeners(element, container.id);
     this.canvasSurface.appendChild(element);
   }
 
-  /**
-   * Attach container-specific listeners
-   */
   attachContainerListeners(element, containerId) {
     const colorBtn = element.querySelector('.color-btn');
-    
+
     colorBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.cycleContainerColor(containerId);
     });
   }
 
-  /**
-   * Cycle through container colors
-   */
   cycleContainerColor(containerId) {
+    // Save state before changing color
+    this.pushHistory();
+
     const container = Store.getItem(containerId);
     if (!container) return;
-    
+
     const colors = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
     const currentIndex = colors.indexOf(container.color);
     const nextIndex = (currentIndex + 1) % colors.length;
-    
+
     const newColor = colors[nextIndex];
     Store.updateItem(containerId, { color: newColor });
-    
+
     const element = this.canvasSurface.querySelector(`[data-item-id="${containerId}"]`);
     if (element) {
       colors.forEach(c => element.classList.remove(`color-${c}`));
@@ -872,54 +1181,48 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Attach common item listeners (drag, select, delete, etc.)
-   */
   attachItemListeners(element, itemId) {
-    // Selection
     element.addEventListener('mousedown', (e) => {
       // Don't select if clicking on input/textarea or buttons
-      if (e.target.tagName === 'INPUT' || 
-          e.target.tagName === 'TEXTAREA' || 
-          e.target.tagName === 'BUTTON' ||
-          e.target.classList.contains('resize-handle')) {
+      if (e.target.tagName === 'INPUT' ||
+        e.target.tagName === 'TEXTAREA' ||
+        e.target.tagName === 'BUTTON' ||
+        e.target.classList.contains('resize-handle')) {
         return;
       }
-      
+
       const isShiftClick = e.shiftKey;
       if (!this.selectedItems.has(itemId)) {
         this.selectItem(itemId, isShiftClick);
       }
-      
-      // Start dragging
+
       this.startDrag(e, element, itemId);
     });
-    
-    // Title input
+
     const titleInput = element.querySelector('.item-title');
     if (titleInput) {
       titleInput.addEventListener('input', (e) => {
         Store.updateItem(itemId, { title: e.target.value });
+        this.pushHistoryDebounced();
       });
-      
+
       titleInput.addEventListener('mousedown', (e) => {
         e.stopPropagation(); // Prevent drag start
       });
     }
-    
-    // Note content
+
     const noteContent = element.querySelector('.note-content');
     if (noteContent) {
       noteContent.addEventListener('input', (e) => {
         Store.updateItem(itemId, { content: e.target.value });
+        this.pushHistoryDebounced();
       });
-      
+
       noteContent.addEventListener('mousedown', (e) => {
         e.stopPropagation();
       });
     }
-    
-    // Delete button
+
     const deleteBtn = element.querySelector('.delete-btn');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', (e) => {
@@ -927,8 +1230,7 @@ class CanvasApp {
         this.deleteItem(itemId);
       });
     }
-    
-    // Copy button
+
     const copyBtn = element.querySelector('.copy-btn');
     if (copyBtn) {
       copyBtn.addEventListener('click', (e) => {
@@ -936,8 +1238,7 @@ class CanvasApp {
         this.copyItemToClipboard(itemId);
       });
     }
-    
-    // Resize handles
+
     const resizeHandles = element.querySelectorAll('.resize-handle');
     resizeHandles.forEach(handle => {
       handle.addEventListener('mousedown', (e) => {
@@ -948,114 +1249,170 @@ class CanvasApp {
   }
 
   /**
-   * Start dragging an item
+   * Get all items whose center point is inside a container
    */
+  getItemsInsideContainer(containerId) {
+    const container = Store.getItem(containerId);
+    if (!container || container.type !== 'container') return [];
+
+    const containerBounds = {
+      left: container.position.x,
+      right: container.position.x + container.size.width,
+      top: container.position.y,
+      bottom: container.position.y + container.size.height
+    };
+
+    return Store.getAllItems().filter(item => {
+      if (item.id === containerId || item.type === 'container') return false;
+      // Check if item center is inside container
+      const centerX = item.position.x + item.size.width / 2;
+      const centerY = item.position.y + item.size.height / 2;
+      return centerX >= containerBounds.left && centerX <= containerBounds.right &&
+             centerY >= containerBounds.top && centerY <= containerBounds.bottom;
+    });
+  }
+
   startDrag(e, element, itemId) {
     const item = Store.getItem(itemId);
     if (!item) return;
-    
+
+    // Save state before drag starts
+    this.pushHistory();
+
     const startX = e.clientX;
     const startY = e.clientY;
     const startPos = { ...item.position };
-    
+
+    // If dragging a container, find items inside and their relative offsets
+    let groupedItems = [];
+    if (item.type === 'container') {
+      const insideItems = this.getItemsInsideContainer(itemId);
+      groupedItems = insideItems.map(insideItem => ({
+        id: insideItem.id,
+        element: this.canvasSurface.querySelector(`[data-item-id="${insideItem.id}"]`),
+        offsetX: insideItem.position.x - item.position.x,
+        offsetY: insideItem.position.y - item.position.y,
+        size: insideItem.size
+      }));
+    }
+
     element.classList.add('dragging');
-    
+
     const onMouseMove = (moveEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
-      
+
       // Snap to grid
       const newX = Math.round((startPos.x + deltaX) / this.gridSize) * this.gridSize;
       const newY = Math.round((startPos.y + deltaY) / this.gridSize) * this.gridSize;
-      
+
       const position = {
         x: Math.max(0, Math.min(newX, this.canvasSize - item.size.width)),
         y: Math.max(0, Math.min(newY, this.canvasSize - item.size.height))
       };
-      
-      // Update DOM immediately for smooth dragging
+
+      // Update container DOM
       element.style.left = `${position.x}px`;
       element.style.top = `${position.y}px`;
-      
-      // Store position for save on mouse up
       element._pendingPosition = position;
+
+      // Move grouped items along with container
+      groupedItems.forEach(grouped => {
+        if (grouped.element) {
+          const groupedPos = {
+            x: Math.max(0, Math.min(position.x + grouped.offsetX, this.canvasSize - grouped.size.width)),
+            y: Math.max(0, Math.min(position.y + grouped.offsetY, this.canvasSize - grouped.size.height))
+          };
+          grouped.element.style.left = `${groupedPos.x}px`;
+          grouped.element.style.top = `${groupedPos.y}px`;
+          grouped.element._pendingPosition = groupedPos;
+        }
+      });
     };
-    
+
     const onMouseUp = () => {
       element.classList.remove('dragging');
-      
+
       // Save final position to store
       if (element._pendingPosition) {
         Store.updateItem(itemId, { position: element._pendingPosition });
         delete element._pendingPosition;
       }
-      
+
+      // Save grouped items' positions
+      groupedItems.forEach(grouped => {
+        if (grouped.element && grouped.element._pendingPosition) {
+          Store.updateItem(grouped.id, { position: grouped.element._pendingPosition });
+          delete grouped.element._pendingPosition;
+        }
+      });
+
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-    
+
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
 
-  /**
-   * Start resizing an item
-   */
   startResize(e, element, itemId, handle) {
     const item = Store.getItem(itemId);
     if (!item) return;
-    
+
+    // Save state before resize starts
+    this.pushHistory();
+
     const startX = e.clientX;
     const startY = e.clientY;
     const startSize = { ...item.size };
-    
+
     const isRight = handle.classList.contains('e') || handle.classList.contains('se');
     const isBottom = handle.classList.contains('s') || handle.classList.contains('se');
-    
+
     const minWidth = item.type === 'container' ? 300 : 200;
     const minHeight = item.type === 'container' ? 200 : 100;
-    
+
     const onMouseMove = (moveEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const deltaY = moveEvent.clientY - startY;
-      
+
       const size = { ...item.size };
-      
+
       if (isRight) {
         const newWidth = Math.max(minWidth, startSize.width + deltaX);
         size.width = Math.round(newWidth / this.gridSize) * this.gridSize;
         element.style.width = `${size.width}px`;
       }
-      
+
       if (isBottom) {
         const newHeight = Math.max(minHeight, startSize.height + deltaY);
         size.height = Math.round(newHeight / this.gridSize) * this.gridSize;
         element.style.height = `${size.height}px`;
       }
-      
+
       // Store size for save on mouse up
       element._pendingSize = size;
     };
-    
+
     const onMouseUp = () => {
       // Save final size to store
       if (element._pendingSize) {
         Store.updateItem(itemId, { size: element._pendingSize });
         delete element._pendingSize;
       }
-      
+
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-    
+
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
   }
 
-  /**
-   * Delete an item
-   */
   deleteItem(id) {
+    // Save state before deleting
+    this.pushHistory();
+
     const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
     if (element) {
       element.remove();
@@ -1064,15 +1421,12 @@ class CanvasApp {
     this.selectedItems.delete(id);
   }
 
-  /**
-   * Copy item content to clipboard
-   */
   async copyItemToClipboard(id) {
     const item = Store.getItem(id);
     if (!item) return;
-    
+
     let text = '';
-    
+
     if (item.type === 'note') {
       text = `${item.title}\n\n${item.content}`;
     } else if (item.type === 'checklist') {
@@ -1083,7 +1437,7 @@ class CanvasApp {
         text += `${indent}${checkbox} ${ci.text}\n`;
       });
     }
-    
+
     try {
       await navigator.clipboard.writeText(text.trim());
       console.log('[SpawnCanvas] Copied to clipboard');
@@ -1092,9 +1446,6 @@ class CanvasApp {
     }
   }
 
-  /**
-   * Escape HTML special characters
-   */
   escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -1103,5 +1454,4 @@ class CanvasApp {
   }
 }
 
-// Export for use by overlay-manager
 window.CanvasApp = CanvasApp;
