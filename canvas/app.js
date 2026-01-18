@@ -156,7 +156,12 @@ class CanvasApp {
     // Track Space key for pan mode
     this._spaceKeyDownHandler = (e) => {
       if (!this.wrapper.isConnected) return;
-      if (e.code === 'Space' && !e.target.matches('input, textarea')) {
+
+      // Handle Shadow DOM retargeting
+      const target = e.composedPath ? e.composedPath()[0] : e.target;
+      const isInput = target.matches && (target.matches('input, textarea') || target.isContentEditable);
+
+      if (e.code === 'Space' && !isInput) {
         e.preventDefault();
         this.isSpaceDown = true;
         this.canvasArea.classList.add('pan-mode');
@@ -1268,7 +1273,7 @@ class CanvasApp {
       const centerX = item.position.x + item.size.width / 2;
       const centerY = item.position.y + item.size.height / 2;
       return centerX >= containerBounds.left && centerX <= containerBounds.right &&
-             centerY >= containerBounds.top && centerY <= containerBounds.bottom;
+        centerY >= containerBounds.top && centerY <= containerBounds.bottom;
     });
   }
 
