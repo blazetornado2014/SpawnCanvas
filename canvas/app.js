@@ -15,9 +15,13 @@ class CanvasApp {
     this.panOffset = { x: 0, y: 0 };
     this.isPanning = false;
     this.panStart = { x: 0, y: 0 };
+    this.isSpaceDown = false; // For Space+Drag panning
 
     // Selection state
     this.selectedItems = new Set();
+    this.isSelecting = false;
+    this.selectionStart = { x: 0, y: 0 };
+    this.selectionBox = null;
 
     this.canvasSize = 5000;
     this.gridSize = 20;
@@ -148,6 +152,25 @@ class CanvasApp {
       }
     };
     document.addEventListener('keydown', this._documentKeyHandler, true); // Use capture phase
+
+    // Track Space key for pan mode
+    this._spaceKeyDownHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if (e.code === 'Space' && !e.target.matches('input, textarea')) {
+        e.preventDefault();
+        this.isSpaceDown = true;
+        this.canvasArea.classList.add('pan-mode');
+      }
+    };
+    this._spaceKeyUpHandler = (e) => {
+      if (!this.wrapper.isConnected) return;
+      if (e.code === 'Space') {
+        this.isSpaceDown = false;
+        this.canvasArea.classList.remove('pan-mode');
+      }
+    };
+    document.addEventListener('keydown', this._spaceKeyDownHandler);
+    document.addEventListener('keyup', this._spaceKeyUpHandler);
 
     // Toolbar button clicks (delegated)
     this.toolbar.addEventListener('click', (e) => {
@@ -421,37 +444,206 @@ class CanvasApp {
   }
 
   handleCanvasMouseDown(e) {
-    // Only pan if clicking on canvas background
-    if (e.target === this.canvasArea ||
+    // Only act if clicking on canvas background
+    const isCanvasBackground = e.target === this.canvasArea ||
       e.target === this.canvasSurface ||
-      e.target.classList.contains('center-anchor')) {
+      e.target.classList.contains('center-anchor');
+
+    if (!isCanvasBackground) return;
+
+    // Space+Drag = Pan
+    if (this.isSpaceDown) {
       this.isPanning = true;
       this.panStart = {
         x: e.clientX - this.panOffset.x,
         y: e.clientY - this.panOffset.y
       };
       this.canvasArea.classList.add('panning');
+    } else {
+      // Regular drag on empty space = Selection box
+      this.startSelection(e);
     }
   }
 
-  handleCanvasMouseMove(e) {
-    if (!this.isPanning) return;
+  startSelection(e) {
+    this.isSelecting = true;
 
-    this.panOffset = {
-      x: e.clientX - this.panStart.x,
-      y: e.clientY - this.panStart.y
+    // Get mouse position relative to canvas surface
+    const surfaceRect = this.canvasSurface.getBoundingClientRect();
+    this.selectionStart = {
+      x: e.clientX - surfaceRect.left,
+      y: e.clientY - surfaceRect.top
     };
 
-    this.updateCanvasTransform();
+    // Create selection box element
+    this.selectionBox = document.createElement('div');
+    this.selectionBox.className = 'selection-box';
+    this.selectionBox.style.left = `${this.selectionStart.x}px`;
+    this.selectionBox.style.top = `${this.selectionStart.y}px`;
+    this.selectionBox.style.width = '0px';
+    this.selectionBox.style.height = '0px';
+    this.canvasSurface.appendChild(this.selectionBox);
+
+    this.canvasArea.classList.add('selecting');
   }
 
-  handleCanvasMouseUp() {
+  handleCanvasMouseMove(e) {
+    if (this.isPanning) {
+      this.panOffset = {
+        x: e.clientX - this.panStart.x,
+        y: e.clientY - this.panStart.y
+      };
+      this.updateCanvasTransform();
+    } else if (this.isSelecting) {
+      this.updateSelection(e);
+    }
+  }
+
+  updateSelection(e) {
+    if (!this.selectionBox) return;
+
+    const surfaceRect = this.canvasSurface.getBoundingClientRect();
+    const currentX = e.clientX - surfaceRect.left;
+    const currentY = e.clientY - surfaceRect.top;
+
+    // Calculate box dimensions (handle negative drag)
+    const left = Math.min(this.selectionStart.x, currentX);
+    const top = Math.min(this.selectionStart.y, currentY);
+    const width = Math.abs(currentX - this.selectionStart.x);
+    const height = Math.abs(currentY - this.selectionStart.y);
+
+    this.selectionBox.style.left = `${left}px`;
+    this.selectionBox.style.top = `${top}px`;
+    this.selectionBox.style.width = `${width}px`;
+    this.selectionBox.style.height = `${height}px`;
+
+    // Live selection feedback - highlight items that intersect
+    this.updateSelectionHighlight({ left, top, width, height });
+  }
+
+  updateSelectionHighlight(boxRect) {
+    const items = Store.getAllItems();
+    const shiftHeld = false; // We'll check this on mouse up for final selection
+
+    items.forEach(item => {
+      const element = this.canvasSurface.querySelector(`[data-item-id="${item.id}"]`);
+      if (!element) return;
+
+      const itemRect = {
+        left: item.position.x,
+        top: item.position.y,
+        width: item.size.width,
+        height: item.size.height
+      };
+
+      if (this.checkIntersection(boxRect, itemRect)) {
+        element.classList.add('selection-highlight');
+      } else {
+        element.classList.remove('selection-highlight');
+      }
+    });
+  }
+
+  checkIntersection(boxA, boxB) {
+    // "Touch" intersection - any overlap counts
+    return !(
+      boxA.left > boxB.left + boxB.width ||
+      boxA.left + boxA.width < boxB.left ||
+      boxA.top > boxB.top + boxB.height ||
+      boxA.top + boxA.height < boxB.top
+    );
+  }
+
+  handleCanvasMouseUp(e) {
     if (this.isPanning) {
       this.isPanning = false;
       this.canvasArea.classList.remove('panning');
 
       // Save viewport position
       Store.updateViewport(this.panOffset.x, this.panOffset.y);
+    } else if (this.isSelecting) {
+      this.endSelection(e);
+    }
+  }
+
+  endSelection(e) {
+    if (!this.selectionBox) {
+      this.isSelecting = false;
+      return;
+    }
+
+    // Get final selection box dimensions
+    const boxRect = {
+      left: parseFloat(this.selectionBox.style.left),
+      top: parseFloat(this.selectionBox.style.top),
+      width: parseFloat(this.selectionBox.style.width),
+      height: parseFloat(this.selectionBox.style.height)
+    };
+
+    // Remove selection box element
+    this.selectionBox.remove();
+    this.selectionBox = null;
+    this.isSelecting = false;
+    this.canvasArea.classList.remove('selecting');
+
+    // Clear highlight classes
+    const highlighted = this.canvasSurface.querySelectorAll('.selection-highlight');
+    highlighted.forEach(el => el.classList.remove('selection-highlight'));
+
+    // If box is too small (just a click), treat as deselect
+    if (boxRect.width < 5 && boxRect.height < 5) {
+      if (!e.shiftKey) {
+        this.deselectAll();
+      }
+      return;
+    }
+
+    // Find all items that intersect with the selection box
+    const items = Store.getAllItems();
+    const selectedIds = [];
+
+    items.forEach(item => {
+      const itemRect = {
+        left: item.position.x,
+        top: item.position.y,
+        width: item.size.width,
+        height: item.size.height
+      };
+
+      if (this.checkIntersection(boxRect, itemRect)) {
+        selectedIds.push(item.id);
+      }
+    });
+
+    // Apply selection
+    if (e.shiftKey) {
+      // Add to existing selection
+      selectedIds.forEach(id => {
+        this.selectedItems.add(id);
+        const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+        if (element) {
+          element.classList.add('selected');
+          this.bringToFront(element);
+        }
+      });
+    } else {
+      // Replace selection
+      this.deselectAll();
+      selectedIds.forEach(id => {
+        this.selectedItems.add(id);
+        const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+        if (element) {
+          element.classList.add('selected');
+          this.bringToFront(element);
+        }
+      });
+    }
+  }
+
+  bringToFront(element) {
+    // Re-append to parent to bring to front (DOM order = z-index for same z-index value)
+    if (element && element.parentNode) {
+      element.parentNode.appendChild(element);
     }
   }
 
@@ -530,10 +722,21 @@ class CanvasApp {
       this.deselectAll();
     }
 
+    // If Shift+Click on already selected item, toggle it off
+    if (addToSelection && this.selectedItems.has(id)) {
+      this.selectedItems.delete(id);
+      const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+      if (element) {
+        element.classList.remove('selected');
+      }
+      return;
+    }
+
     this.selectedItems.add(id);
     const element = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
     if (element) {
       element.classList.add('selected');
+      this.bringToFront(element);
     }
   }
 
