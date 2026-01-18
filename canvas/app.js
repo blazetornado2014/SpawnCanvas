@@ -640,6 +640,41 @@ class CanvasApp {
     }
   }
 
+
+  /**
+   * Auto-resize checklist to fit content
+   */
+  autoResizeChecklist(id) {
+    const checklistElement = this.canvasSurface.querySelector(`[data-item-id="${id}"]`);
+    if (!checklistElement) return;
+
+    const checklistContent = checklistElement.querySelector('.item-content');
+    if (!checklistContent) return;
+
+    // Get current height and scroll height
+    const currentHeight = parseFloat(checklistElement.style.height);
+    const headerHeight = 37; // Approx header height
+    const padding = 24; // Top+bottom padding
+    const contentHeight = checklistContent.scrollHeight;
+
+    // Calculate required height based on content
+    const minHeight = 100; // Minimum height
+    const requiredHeight = contentHeight + headerHeight + 5; // +5 buffer
+
+    // Resize if content is larger than current container
+    if (requiredHeight > currentHeight) {
+      const newHeight = Math.max(requiredHeight, minHeight);
+      checklistElement.style.height = `${newHeight}px`;
+
+      // Update store
+      const item = Store.getItem(id);
+      if (item) {
+        item.size.height = newHeight;
+        Store.updateItem(id, { size: item.size });
+      }
+    }
+  }
+
   bringToFront(element) {
     // Re-append to parent to bring to front (DOM order = z-index for same z-index value)
     if (element && element.parentNode) {
@@ -963,11 +998,18 @@ class CanvasApp {
     const ul = element.querySelector('.checklist-items');
     ul.innerHTML = this.renderChecklistItems(checklist.items);
 
-    // Focus new item
+    // Auto-resize
     setTimeout(() => {
-      const newInput = ul.querySelector(`[data-item-id="${newItem.id}"] .item-text`);
-      if (newInput) newInput.focus();
+      this.autoResizeChecklist(checklistId);
+
+      // Focus the new item
+      const inputs = ul.querySelectorAll('.item-text');
+      if (inputs.length > 0) {
+        inputs[inputs.length - 1].focus();
+      }
     }, 0);
+
+
   }
 
   toggleChecklistItem(checklistId, itemId, completed) {
@@ -1014,7 +1056,11 @@ class CanvasApp {
       Store.updateItem(checklistId, { items: checklist.items });
 
       const li = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"] [data-item-id="${itemId}"]`);
-      if (li) li.remove();
+      if (li) {
+        li.remove();
+        // Auto-resize
+        this.autoResizeChecklist(checklistId);
+      }
     }
   }
 
