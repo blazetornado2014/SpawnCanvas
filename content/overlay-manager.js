@@ -238,6 +238,8 @@
         user-select: none;
         z-index: var(--z-items);
         transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+        display: flex;
+        flex-direction: column;
       }
 
       .canvas-item:hover {
@@ -322,11 +324,15 @@
       .item-content {
         padding: 12px;
         overflow: hidden;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
       }
 
       .note-content {
         width: 100%;
-        min-height: 60px;
+        height: 100%;
+        flex: 1;
         background: transparent;
         border: none;
         color: var(--text-primary);
@@ -547,7 +553,7 @@
     // Create host element
     hostElement = document.createElement('div');
     hostElement.id = HOST_ID;
-    
+
     // Style the host element to be a fixed overlay
     hostElement.style.cssText = `
       position: fixed !important;
@@ -572,12 +578,12 @@
     if (typeof CanvasApp !== 'undefined') {
       canvasApp = new CanvasApp(shadowRoot);
       canvasApp.init();
-      
+
       // Listen for close event from the app
       shadowRoot.addEventListener('spawn-canvas-close', () => {
         hideOverlay();
       });
-      
+
       console.log('[SpawnCanvas] App initialized successfully');
     } else {
       console.error('[SpawnCanvas] CanvasApp class not found. Make sure canvas/app.js is loaded.');
@@ -614,7 +620,7 @@
         </div>
       </div>
     `;
-    
+
     wrapper.querySelector('.close-btn').addEventListener('click', hideOverlay);
     shadowRoot.appendChild(wrapper);
   }
@@ -626,11 +632,11 @@
     if (!isInitialized) {
       createOverlay();
     }
-    
+
     if (hostElement) {
       hostElement.style.display = 'block';
       isVisible = true;
-      
+
       // Focus the canvas for keyboard events
       const wrapper = shadowRoot.querySelector('.spawn-canvas-wrapper');
       if (wrapper) {
