@@ -1248,6 +1248,30 @@ class CanvasApp {
     });
   }
 
+  /**
+   * Get all items whose center point is inside a container
+   */
+  getItemsInsideContainer(containerId) {
+    const container = Store.getItem(containerId);
+    if (!container || container.type !== 'container') return [];
+
+    const containerBounds = {
+      left: container.position.x,
+      right: container.position.x + container.size.width,
+      top: container.position.y,
+      bottom: container.position.y + container.size.height
+    };
+
+    return Store.getAllItems().filter(item => {
+      if (item.id === containerId || item.type === 'container') return false;
+      // Check if item center is inside container
+      const centerX = item.position.x + item.size.width / 2;
+      const centerY = item.position.y + item.size.height / 2;
+      return centerX >= containerBounds.left && centerX <= containerBounds.right &&
+             centerY >= containerBounds.top && centerY <= containerBounds.bottom;
+    });
+  }
+
   startDrag(e, element, itemId) {
     const item = Store.getItem(itemId);
     if (!item) return;
@@ -1258,6 +1282,19 @@ class CanvasApp {
     const startX = e.clientX;
     const startY = e.clientY;
     const startPos = { ...item.position };
+
+    // If dragging a container, find items inside and their relative offsets
+    let groupedItems = [];
+    if (item.type === 'container') {
+      const insideItems = this.getItemsInsideContainer(itemId);
+      groupedItems = insideItems.map(insideItem => ({
+        id: insideItem.id,
+        element: this.canvasSurface.querySelector(`[data-item-id="${insideItem.id}"]`),
+        offsetX: insideItem.position.x - item.position.x,
+        offsetY: insideItem.position.y - item.position.y,
+        size: insideItem.size
+      }));
+    }
 
     element.classList.add('dragging');
 
@@ -1274,12 +1311,23 @@ class CanvasApp {
         y: Math.max(0, Math.min(newY, this.canvasSize - item.size.height))
       };
 
-      // Update DOM immediately for smooth dragging
+      // Update container DOM
       element.style.left = `${position.x}px`;
       element.style.top = `${position.y}px`;
-
-      // Store position for save on mouse up
       element._pendingPosition = position;
+
+      // Move grouped items along with container
+      groupedItems.forEach(grouped => {
+        if (grouped.element) {
+          const groupedPos = {
+            x: Math.max(0, Math.min(position.x + grouped.offsetX, this.canvasSize - grouped.size.width)),
+            y: Math.max(0, Math.min(position.y + grouped.offsetY, this.canvasSize - grouped.size.height))
+          };
+          grouped.element.style.left = `${groupedPos.x}px`;
+          grouped.element.style.top = `${groupedPos.y}px`;
+          grouped.element._pendingPosition = groupedPos;
+        }
+      });
     };
 
     const onMouseUp = () => {
@@ -1290,6 +1338,14 @@ class CanvasApp {
         Store.updateItem(itemId, { position: element._pendingPosition });
         delete element._pendingPosition;
       }
+
+      // Save grouped items' positions
+      groupedItems.forEach(grouped => {
+        if (grouped.element && grouped.element._pendingPosition) {
+          Store.updateItem(grouped.id, { position: grouped.element._pendingPosition });
+          delete grouped.element._pendingPosition;
+        }
+      });
 
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
