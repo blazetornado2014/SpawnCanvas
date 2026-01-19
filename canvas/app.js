@@ -97,10 +97,16 @@ class CanvasApp {
           <select class="workspace-selector">
             <option value="default">Default Workspace</option>
           </select>
-          <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
-          <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
-          <button class="workspace-btn icon-btn" data-action="export-workspace" title="Export Workspace">📤</button>
-          <button class="workspace-btn icon-btn" data-action="export-all" title="Export All Workspaces">📦</button>
+          <div class="settings-dropdown">
+            <button class="settings-btn icon-btn" data-action="toggle-settings" title="Workspace Settings">⚙️</button>
+            <div class="settings-menu">
+              <button class="settings-menu-item" data-action="rename-workspace">✏️ Rename Workspace</button>
+              <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
+              <div class="settings-menu-divider"></div>
+              <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
+              <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
+            </div>
+          </div>
           <button class="add-btn" data-action="add-note">+ Note</button>
           <button class="add-btn" data-action="add-checklist">+ Checklist</button>
           <button class="add-btn" data-action="add-container">+ Container</button>
@@ -132,6 +138,7 @@ class CanvasApp {
     this.toolbar = this.wrapper.querySelector('.toolbar');
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
     this.importFileInput = this.wrapper.querySelector('.import-file-input');
+    this.settingsDropdown = this.wrapper.querySelector('.settings-dropdown');
   }
 
   attachEventListeners() {
@@ -186,6 +193,17 @@ class CanvasApp {
       const action = e.target.closest('[data-action]')?.dataset.action;
       if (action) {
         this.handleToolbarAction(action);
+        // Close settings menu after clicking a menu item (except toggle itself)
+        if (action !== 'toggle-settings' && e.target.closest('.settings-menu')) {
+          this.closeSettingsMenu();
+        }
+      }
+    });
+
+    // Close settings menu when clicking outside
+    this.wrapper.addEventListener('click', (e) => {
+      if (!e.target.closest('.settings-dropdown')) {
+        this.closeSettingsMenu();
       }
     });
 
@@ -671,7 +689,18 @@ class CanvasApp {
       case 'redo':
         this.redo();
         break;
+      case 'toggle-settings':
+        this.toggleSettingsMenu();
+        break;
     }
+  }
+
+  toggleSettingsMenu() {
+    this.settingsDropdown.classList.toggle('open');
+  }
+
+  closeSettingsMenu() {
+    this.settingsDropdown.classList.remove('open');
   }
 
   handleCanvasMouseDown(e) {

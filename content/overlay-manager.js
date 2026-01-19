@@ -524,6 +524,53 @@
         display: none !important;
       }
 
+      /* Settings Dropdown */
+      .settings-dropdown {
+        position: relative;
+      }
+
+      .settings-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        background: var(--toolbar-bg);
+        border: 1px solid var(--item-border);
+        border-radius: 6px;
+        padding: 4px 0;
+        min-width: 200px;
+        box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+        z-index: calc(var(--z-toolbar) + 1);
+        display: none;
+      }
+
+      .settings-dropdown.open .settings-menu {
+        display: block;
+      }
+
+      .settings-menu-item {
+        display: block;
+        width: 100%;
+        padding: 8px 12px;
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+      }
+
+      .settings-menu-item:hover {
+        background: var(--item-border);
+      }
+
+      .settings-menu-divider {
+        height: 1px;
+        background: var(--item-border);
+        margin: 4px 0;
+      }
+
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;
