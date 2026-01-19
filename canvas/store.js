@@ -19,6 +19,10 @@ const Store = (function() {
   // Debounce delay for auto-save (ms)
   const SAVE_DEBOUNCE_MS = 300;
 
+  // Storage soft limit (100MB)
+  const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024;
+  let storageLimitWarningShown = false;
+
   // State
   let currentWorkspace = null;
   let saveTimeout = null;
@@ -164,6 +168,25 @@ const Store = (function() {
   }
 
   /**
+   * Check storage usage and warn if exceeding soft limit
+   */
+  async function checkStorageUsage() {
+    if (!isStorageAvailable() || storageLimitWarningShown) return;
+
+    try {
+      const bytesInUse = await chrome.storage.local.getBytesInUse(null);
+      if (bytesInUse > STORAGE_LIMIT_BYTES) {
+        storageLimitWarningShown = true;
+        const usedMB = (bytesInUse / (1024 * 1024)).toFixed(1);
+        console.warn(`[Store] Storage usage (${usedMB}MB) exceeds 100MB limit`);
+        alert(`SpawnCanvas storage usage (${usedMB}MB) exceeds 100MB.\n\nPlease contact the developer for assistance.`);
+      }
+    } catch (err) {
+      console.error('[Store] Error checking storage usage:', err);
+    }
+  }
+
+  /**
    * Save workspace data to storage
    * @param {object} workspace - Workspace data
    */
@@ -175,6 +198,8 @@ const Store = (function() {
     try {
       const key = WORKSPACE_PREFIX + workspace.id;
       await chrome.storage.local.set({ [key]: workspace });
+      // Check storage usage after save
+      checkStorageUsage();
     } catch (err) {
       console.error(`[Store] Error saving workspace "${workspace.id}":`, err);
     }

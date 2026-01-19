@@ -5,6 +5,7 @@
   "description": "A persistent floating canvas overlay for project planning.",
   "permissions": [
     "storage",
+    "unlimitedStorage",
     "activeTab",
     "scripting"
   ],
