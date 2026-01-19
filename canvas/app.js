@@ -100,6 +100,7 @@ class CanvasApp {
           <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
           <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
           <button class="workspace-btn icon-btn" data-action="export-workspace" title="Export Workspace">📤</button>
+          <button class="workspace-btn icon-btn" data-action="export-all" title="Export All Workspaces">📦</button>
           <button class="add-btn" data-action="add-note">+ Note</button>
           <button class="add-btn" data-action="add-checklist">+ Checklist</button>
           <button class="add-btn" data-action="add-container">+ Container</button>
@@ -360,6 +361,12 @@ class CanvasApp {
     importOption.value = '__import__';
     importOption.textContent = '📥 Import Workspace...';
     this.workspaceSelector.appendChild(importOption);
+
+    // Add "Import All Workspaces" option
+    const importAllOption = document.createElement('option');
+    importAllOption.value = '__import_all__';
+    importAllOption.textContent = '📦 Import All Workspaces...';
+    this.workspaceSelector.appendChild(importAllOption);
   }
 
   updateWorkspaceDropdownSelection() {
@@ -383,8 +390,15 @@ class CanvasApp {
       }
     } else if (value === '__import__') {
       // Trigger file picker for import
+      this.importFileInput.dataset.importType = 'single';
       this.importFileInput.click();
       // Reset to current workspace (import will switch if successful)
+      this.updateWorkspaceDropdownSelection();
+    } else if (value === '__import_all__') {
+      // Trigger file picker for import all
+      this.importFileInput.dataset.importType = 'all';
+      this.importFileInput.click();
+      // Reset to current workspace
       this.updateWorkspaceDropdownSelection();
     } else {
       await Store.switchWorkspace(value);
@@ -444,17 +458,46 @@ class CanvasApp {
     console.log('[SpawnCanvas] Workspace exported:', currentWorkspace.name);
   }
 
+  async exportAllWorkspaces() {
+    const json = await Store.exportAllWorkspaces();
+    if (!json) return;
+
+    // Create download
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().split('T')[0];
+    a.download = `SpawnCanvas_all_workspaces_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    console.log('[SpawnCanvas] All workspaces exported');
+  }
+
   async handleImportFile(file) {
     if (!file) return;
 
+    const importType = this.importFileInput.dataset.importType || 'single';
+
     try {
       const text = await file.text();
-      const workspace = await Store.importWorkspace(text);
 
-      if (workspace) {
-        // Switch to the imported workspace
-        await Store.switchWorkspace(workspace.id);
-        await this.populateWorkspaceDropdown();
+      if (importType === 'all') {
+        const workspaces = await Store.importAllWorkspaces(text);
+        if (workspaces.length > 0) {
+          // Switch to the first imported workspace
+          await Store.switchWorkspace(workspaces[0].id);
+          await this.populateWorkspaceDropdown();
+          alert(`Successfully imported ${workspaces.length} workspace(s).`);
+        }
+      } else {
+        const workspace = await Store.importWorkspace(text);
+        if (workspace) {
+          // Switch to the imported workspace
+          await Store.switchWorkspace(workspace.id);
+          await this.populateWorkspaceDropdown();
+        }
       }
     } catch (err) {
       console.error('[SpawnCanvas] Error reading import file:', err);
@@ -618,6 +661,9 @@ class CanvasApp {
         break;
       case 'export-workspace':
         this.exportWorkspace();
+        break;
+      case 'export-all':
+        this.exportAllWorkspaces();
         break;
       case 'undo':
         this.undo();
