@@ -1,8 +1,8 @@
-# SpawnCanvas 
+# SpawnCanvas
 
 SpawnCanvas is a persistent floating canvas overlay for project planning, directly in your browser.
 
-## 📥 Installation
+## Installation
 
 SpawnCanvas is currently in **Developer Mode**. To install it:
 
@@ -18,26 +18,83 @@ SpawnCanvas is currently in **Developer Mode**. To install it:
 
 The **SpawnCanvas** icon should now appear in your browser toolbar!
 
-## 🎮 Usage
+## Usage
 
-1.  **Open the Overlay**: Click the SpawnCanvas extension icon in your toolbar (or pin it for easy access).
-    *   *Note: It works on any web page (http/https), but not on internal browser pages like `chrome://newtab`.*
-2.  **Add Items**: Use the toolbar to add:
-    *   📝 **Notes**: Plain text for ideas.
-    *   ✅ **Checklists**: Nested tasks.
-    *   📦 **Containers**: Group related items visually.
-3.  **Navigate**:
-    *   **Pan**: Hold `Space + Click & Drag` on the background.
-    *   **Center**: Click the `⌂` Home button to return to (0,0).
-4.  **Edit**:
-    *   Double-click text to edit.
-    *   Resize items by dragging the bottom-right corner.
-    *   Right-click items for a context menu (Change Color, Delete, etc.).
+1.  **Open the Overlay**: Click the SpawnCanvas extension icon in your toolbar.
+    *   *Note: Works on any web page (http/https), but not on internal browser pages like `chrome://newtab`.*
 
-## ⌨️ Shortcuts
+2.  **Add Items**: Use the toolbar buttons to add:
+    *   **Notes**: Plain text for ideas and content.
+    *   **Checklists**: Task lists with nested items (Tab to indent).
+    *   **Containers**: Colored boxes to group related items visually.
 
-*   `Ctrl + Z` : Undo
-*   `Ctrl + Y` : Redo
-*   `Space + Drag` : Pan Canvas
-*   `Esc` : Unfocus text / Close Overlay
+3.  **Navigate the Canvas**:
+    *   **Pan**: Hold `Space` and drag the mouse.
+    *   **Reset View**: Press `Home` or click the `⌂` button.
 
+4.  **Select Items**:
+    *   **Click** an item to select it.
+    *   **Shift+Click** to add/remove from selection.
+    *   **Drag on empty canvas** to box-select multiple items.
+
+5.  **Edit Items**:
+    *   Click text fields to edit titles and content.
+    *   Drag items to move them (snaps to grid).
+    *   Drag resize handles (corners/edges) to resize.
+    *   Containers automatically move items inside them when dragged.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Space + Drag` | Pan canvas |
+| `Ctrl + Z` | Undo |
+| `Ctrl + Y` | Redo |
+| `Ctrl + Shift + Z` | Redo (alternative) |
+| `Home` | Reset view to center |
+| `Esc` | Close overlay / Unfocus text |
+| `Delete` / `Backspace` | Delete selected items |
+| `1` | Navigate to previous item |
+| `2` | Navigate to next item |
+
+### Checklist Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Enter` | Add new item |
+| `Tab` | Indent item (max 2 levels) |
+| `Shift + Tab` | Outdent item |
+
+## Features
+
+### Workspaces
+- Create multiple workspaces from the dropdown menu.
+- Switch between workspaces to organize different projects.
+- Rename or delete workspaces via the Settings menu (gear icon).
+
+### Undo/Redo
+- 42 levels of undo/redo history.
+- History is saved per workspace and persists across sessions.
+
+### Export/Import
+- **Export Workspace**: Save current workspace as a JSON file.
+- **Export All**: Save all workspaces to a single backup file.
+- **Import Workspace**: Load a single workspace from a backup.
+- **Import All**: Restore all workspaces from a backup file.
+
+Access export options from the Settings menu. Import options are in the workspace dropdown.
+
+### Containers
+- 8 color options (click the palette icon to cycle colors).
+- Items whose center is inside a container move with it when dragged.
+
+### Selection
+- Box-select by dragging on empty canvas space.
+- Multi-select with Shift+Click.
+- Delete multiple selected items at once.
+
+## Tips
+
+- **Copy to Clipboard**: Hover over a note/checklist and click the clipboard icon to copy its content as text.
+- **Checklist Formatting**: Copied checklists include checkboxes as `[x]` or `[ ]` with proper indentation.
+- **Data Safety**: Use Export All regularly to backup your workspaces.
