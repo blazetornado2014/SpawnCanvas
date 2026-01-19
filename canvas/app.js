@@ -97,8 +97,15 @@ class CanvasApp {
           <select class="workspace-selector">
             <option value="default">Default Workspace</option>
           </select>
-          <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
-          <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
+          <div class="settings-dropdown">
+            <button class="settings-btn icon-btn" data-action="toggle-settings" title="Workspace Settings">⚙️</button>
+            <div class="settings-menu">
+              <button class="settings-menu-item" data-action="rename-workspace">✏️ Rename Workspace</button>
+              <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
+              <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
+              <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
+            </div>
+          </div>
           <button class="add-btn" data-action="add-note">+ Note</button>
           <button class="add-btn" data-action="add-checklist">+ Checklist</button>
           <button class="add-btn" data-action="add-container">+ Container</button>
@@ -106,9 +113,6 @@ class CanvasApp {
         <div class="toolbar-right">
           <button class="undo-btn icon-btn" data-action="undo" title="Undo (Ctrl+Z)">↩️</button>
           <button class="redo-btn icon-btn" data-action="redo" title="Redo (Ctrl+Y)">↪️</button>
-          <button class="center-btn icon-btn" data-action="center" title="Reset View (Home)">
-            <span>⌂</span>
-          </button>
           <button class="close-btn icon-btn" data-action="close" title="Close (Esc)">×</button>
         </div>
       </div>
@@ -118,6 +122,7 @@ class CanvasApp {
           <!-- Canvas items will be rendered here -->
         </div>
       </div>
+      <input type="file" class="import-file-input" accept=".json" style="display: none;">
     `;
 
     this.shadowRoot.appendChild(this.wrapper);
@@ -128,6 +133,8 @@ class CanvasApp {
     this.canvasSurface = this.wrapper.querySelector('.canvas-surface');
     this.toolbar = this.wrapper.querySelector('.toolbar');
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
+    this.importFileInput = this.wrapper.querySelector('.import-file-input');
+    this.settingsDropdown = this.wrapper.querySelector('.settings-dropdown');
   }
 
   attachEventListeners() {
@@ -182,12 +189,29 @@ class CanvasApp {
       const action = e.target.closest('[data-action]')?.dataset.action;
       if (action) {
         this.handleToolbarAction(action);
+        // Close settings menu after clicking a menu item (except toggle itself)
+        if (action !== 'toggle-settings' && e.target.closest('.settings-menu')) {
+          this.closeSettingsMenu();
+        }
+      }
+    });
+
+    // Close settings menu when clicking outside
+    this.wrapper.addEventListener('click', (e) => {
+      if (!e.target.closest('.settings-dropdown')) {
+        this.closeSettingsMenu();
       }
     });
 
     // Workspace selector
     this.workspaceSelector.addEventListener('change', (e) => {
       this.handleWorkspaceChange(e.target.value);
+    });
+
+    // Import file input
+    this.importFileInput.addEventListener('change', (e) => {
+      this.handleImportFile(e.target.files[0]);
+      e.target.value = ''; // Reset so same file can be selected again
     });
 
     // Canvas panning
@@ -345,6 +369,18 @@ class CanvasApp {
     newOption.value = '__new__';
     newOption.textContent = '+ New Workspace';
     this.workspaceSelector.appendChild(newOption);
+
+    // Add "Import Workspace" option
+    const importOption = document.createElement('option');
+    importOption.value = '__import__';
+    importOption.textContent = '📥 Import Workspace...';
+    this.workspaceSelector.appendChild(importOption);
+
+    // Add "Import All Workspaces" option
+    const importAllOption = document.createElement('option');
+    importAllOption.value = '__import_all__';
+    importAllOption.textContent = '📦 Import All Workspaces...';
+    this.workspaceSelector.appendChild(importAllOption);
   }
 
   updateWorkspaceDropdownSelection() {
@@ -366,6 +402,18 @@ class CanvasApp {
         // Reset to current workspace if cancelled
         this.updateWorkspaceDropdownSelection();
       }
+    } else if (value === '__import__') {
+      // Trigger file picker for import
+      this.importFileInput.dataset.importType = 'single';
+      this.importFileInput.click();
+      // Reset to current workspace (import will switch if successful)
+      this.updateWorkspaceDropdownSelection();
+    } else if (value === '__import_all__') {
+      // Trigger file picker for import all
+      this.importFileInput.dataset.importType = 'all';
+      this.importFileInput.click();
+      // Reset to current workspace
+      this.updateWorkspaceDropdownSelection();
     } else {
       await Store.switchWorkspace(value);
     }
@@ -402,6 +450,72 @@ class CanvasApp {
         await Store.switchWorkspace(switchToId);
         await this.populateWorkspaceDropdown();
       }
+    }
+  }
+
+  async exportWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const json = await Store.exportWorkspace();
+    if (!json) return;
+
+    // Create download
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentWorkspace.name.replace(/[^a-z0-9]/gi, '_')}_backup.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    console.log('[SpawnCanvas] Workspace exported:', currentWorkspace.name);
+  }
+
+  async exportAllWorkspaces() {
+    const json = await Store.exportAllWorkspaces();
+    if (!json) return;
+
+    // Create download
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().split('T')[0];
+    a.download = `SpawnCanvas_all_workspaces_${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    console.log('[SpawnCanvas] All workspaces exported');
+  }
+
+  async handleImportFile(file) {
+    if (!file) return;
+
+    const importType = this.importFileInput.dataset.importType || 'single';
+
+    try {
+      const text = await file.text();
+
+      if (importType === 'all') {
+        const workspaces = await Store.importAllWorkspaces(text);
+        if (workspaces.length > 0) {
+          // Switch to the first imported workspace
+          await Store.switchWorkspace(workspaces[0].id);
+          await this.populateWorkspaceDropdown();
+          alert(`Successfully imported ${workspaces.length} workspace(s).`);
+        }
+      } else {
+        const workspace = await Store.importWorkspace(text);
+        if (workspace) {
+          // Switch to the imported workspace
+          await Store.switchWorkspace(workspace.id);
+          await this.populateWorkspaceDropdown();
+        }
+      }
+    } catch (err) {
+      console.error('[SpawnCanvas] Error reading import file:', err);
+      alert('Failed to read import file.');
     }
   }
 
@@ -521,6 +635,7 @@ class CanvasApp {
         this.handleClose();
         break;
       case 'Home':
+      case '0':
         this.resetView();
         break;
       case 'Delete':
@@ -559,13 +674,30 @@ class CanvasApp {
       case 'delete-workspace':
         this.deleteWorkspace();
         break;
+      case 'export-workspace':
+        this.exportWorkspace();
+        break;
+      case 'export-all':
+        this.exportAllWorkspaces();
+        break;
       case 'undo':
         this.undo();
         break;
       case 'redo':
         this.redo();
         break;
+      case 'toggle-settings':
+        this.toggleSettingsMenu();
+        break;
     }
+  }
+
+  toggleSettingsMenu() {
+    this.settingsDropdown.classList.toggle('open');
+  }
+
+  closeSettingsMenu() {
+    this.settingsDropdown.classList.remove('open');
   }
 
   handleCanvasMouseDown(e) {
