@@ -30,7 +30,7 @@ The **SpawnCanvas** icon should now appear in your browser toolbar!
 
 3.  **Navigate the Canvas**:
     *   **Pan**: Hold `Space` and drag the mouse.
-    *   **Reset View**: Press `Home` or click the `⌂` button.
+    *   **Reset View**: Press `Home` or `0` to return to center.
 
 4.  **Select Items**:
     *   **Click** an item to select it.
@@ -51,7 +51,7 @@ The **SpawnCanvas** icon should now appear in your browser toolbar!
 | `Ctrl + Z` | Undo |
 | `Ctrl + Y` | Redo |
 | `Ctrl + Shift + Z` | Redo (alternative) |
-| `Home` | Reset view to center |
+| `Home` / `0` | Reset view to center |
 | `Esc` | Close overlay / Unfocus text |
 | `Delete` / `Backspace` | Delete selected items |
 | `1` | Navigate to previous item |

@@ -113,9 +113,6 @@ class CanvasApp {
         <div class="toolbar-right">
           <button class="undo-btn icon-btn" data-action="undo" title="Undo (Ctrl+Z)">↩️</button>
           <button class="redo-btn icon-btn" data-action="redo" title="Redo (Ctrl+Y)">↪️</button>
-          <button class="center-btn icon-btn" data-action="center" title="Reset View (Home)">
-            <span>⌂</span>
-          </button>
           <button class="close-btn icon-btn" data-action="close" title="Close (Esc)">×</button>
         </div>
       </div>
@@ -638,6 +635,7 @@ class CanvasApp {
         this.handleClose();
         break;
       case 'Home':
+      case '0':
         this.resetView();
         break;
       case 'Delete':
