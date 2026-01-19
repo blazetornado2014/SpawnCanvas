@@ -102,7 +102,6 @@ class CanvasApp {
             <div class="settings-menu">
               <button class="settings-menu-item" data-action="rename-workspace">✏️ Rename Workspace</button>
               <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
-              <div class="settings-menu-divider"></div>
               <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
               <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
             </div>
