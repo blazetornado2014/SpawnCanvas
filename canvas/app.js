@@ -99,6 +99,7 @@ class CanvasApp {
           </select>
           <button class="workspace-btn icon-btn" data-action="rename-workspace" title="Rename Workspace">✏️</button>
           <button class="workspace-btn icon-btn" data-action="delete-workspace" title="Delete Workspace">🗑️</button>
+          <button class="workspace-btn icon-btn" data-action="export-workspace" title="Export Workspace">📤</button>
           <button class="add-btn" data-action="add-note">+ Note</button>
           <button class="add-btn" data-action="add-checklist">+ Checklist</button>
           <button class="add-btn" data-action="add-container">+ Container</button>
@@ -118,6 +119,7 @@ class CanvasApp {
           <!-- Canvas items will be rendered here -->
         </div>
       </div>
+      <input type="file" class="import-file-input" accept=".json" style="display: none;">
     `;
 
     this.shadowRoot.appendChild(this.wrapper);
@@ -128,6 +130,7 @@ class CanvasApp {
     this.canvasSurface = this.wrapper.querySelector('.canvas-surface');
     this.toolbar = this.wrapper.querySelector('.toolbar');
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
+    this.importFileInput = this.wrapper.querySelector('.import-file-input');
   }
 
   attachEventListeners() {
@@ -188,6 +191,12 @@ class CanvasApp {
     // Workspace selector
     this.workspaceSelector.addEventListener('change', (e) => {
       this.handleWorkspaceChange(e.target.value);
+    });
+
+    // Import file input
+    this.importFileInput.addEventListener('change', (e) => {
+      this.handleImportFile(e.target.files[0]);
+      e.target.value = ''; // Reset so same file can be selected again
     });
 
     // Canvas panning
@@ -345,6 +354,12 @@ class CanvasApp {
     newOption.value = '__new__';
     newOption.textContent = '+ New Workspace';
     this.workspaceSelector.appendChild(newOption);
+
+    // Add "Import Workspace" option
+    const importOption = document.createElement('option');
+    importOption.value = '__import__';
+    importOption.textContent = '📥 Import Workspace...';
+    this.workspaceSelector.appendChild(importOption);
   }
 
   updateWorkspaceDropdownSelection() {
@@ -366,6 +381,11 @@ class CanvasApp {
         // Reset to current workspace if cancelled
         this.updateWorkspaceDropdownSelection();
       }
+    } else if (value === '__import__') {
+      // Trigger file picker for import
+      this.importFileInput.click();
+      // Reset to current workspace (import will switch if successful)
+      this.updateWorkspaceDropdownSelection();
     } else {
       await Store.switchWorkspace(value);
     }
@@ -402,6 +422,43 @@ class CanvasApp {
         await Store.switchWorkspace(switchToId);
         await this.populateWorkspaceDropdown();
       }
+    }
+  }
+
+  async exportWorkspace() {
+    const currentWorkspace = Store.getCurrentWorkspace();
+    if (!currentWorkspace) return;
+
+    const json = await Store.exportWorkspace();
+    if (!json) return;
+
+    // Create download
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentWorkspace.name.replace(/[^a-z0-9]/gi, '_')}_backup.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    console.log('[SpawnCanvas] Workspace exported:', currentWorkspace.name);
+  }
+
+  async handleImportFile(file) {
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const workspace = await Store.importWorkspace(text);
+
+      if (workspace) {
+        // Switch to the imported workspace
+        await Store.switchWorkspace(workspace.id);
+        await this.populateWorkspaceDropdown();
+      }
+    } catch (err) {
+      console.error('[SpawnCanvas] Error reading import file:', err);
+      alert('Failed to read import file.');
     }
   }
 
@@ -558,6 +615,9 @@ class CanvasApp {
         break;
       case 'delete-workspace':
         this.deleteWorkspace();
+        break;
+      case 'export-workspace':
+        this.exportWorkspace();
         break;
       case 'undo':
         this.undo();

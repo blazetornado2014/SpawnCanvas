@@ -493,6 +493,104 @@ const Store = (function() {
   }
 
   // ============================================
+  // EXPORT / IMPORT
+  // ============================================
+
+  /**
+   * Export a workspace to JSON string
+   * @param {string} id - Workspace ID (defaults to current)
+   * @returns {Promise<string|null>} JSON string or null if failed
+   */
+  async function exportWorkspace(id = null) {
+    const workspaceId = id || (currentWorkspace ? currentWorkspace.id : null);
+    if (!workspaceId) {
+      console.error('[Store] No workspace to export');
+      return null;
+    }
+
+    const workspace = id ? await loadWorkspaceData(id) : currentWorkspace;
+    if (!workspace) {
+      console.error('[Store] Workspace not found for export');
+      return null;
+    }
+
+    const exportData = {
+      version: 1,
+      exportedAt: Date.now(),
+      workspace: {
+        name: workspace.name,
+        viewportX: workspace.viewportX,
+        viewportY: workspace.viewportY,
+        items: workspace.items,
+        createdAt: workspace.createdAt,
+        updatedAt: workspace.updatedAt
+      }
+    };
+
+    return JSON.stringify(exportData, null, 2);
+  }
+
+  /**
+   * Import a workspace from JSON string
+   * @param {string} jsonString - JSON string from export
+   * @returns {Promise<object|null>} Imported workspace or null if failed
+   */
+  async function importWorkspace(jsonString) {
+    try {
+      const data = JSON.parse(jsonString);
+
+      // Validate structure
+      if (!data.workspace || !data.workspace.name) {
+        throw new Error('Invalid workspace data: missing name');
+      }
+
+      // Create new workspace with imported data
+      const name = data.workspace.name + ' (Imported)';
+      const id = generateWorkspaceId(name);
+
+      const workspace = {
+        id,
+        name,
+        viewportX: data.workspace.viewportX || 0,
+        viewportY: data.workspace.viewportY || 0,
+        items: data.workspace.items || [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      // Regenerate item IDs to avoid conflicts
+      workspace.items = workspace.items.map(item => ({
+        ...item,
+        id: generateItemId(),
+        // Also regenerate checklist item IDs if present
+        items: item.items ? item.items.map(ci => ({
+          ...ci,
+          id: `ci_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+        })) : undefined
+      }));
+
+      // Save the workspace
+      await saveWorkspaceData(workspace);
+
+      // Add to workspace list
+      const list = await getWorkspaceList();
+      if (!list.includes(id)) {
+        list.push(id);
+        await chrome.storage.local.set({ [WORKSPACES_LIST_KEY]: list });
+      }
+
+      emit('workspace:imported', workspace);
+      console.log('[Store] Workspace imported:', workspace.name);
+
+      return workspace;
+    } catch (err) {
+      console.error('[Store] Error importing workspace:', err);
+      alert('Failed to import workspace: ' + err.message);
+      return null;
+    }
+  }
+
+  // ============================================
   // PERSISTENCE
   // ============================================
 
@@ -596,7 +694,11 @@ const Store = (function() {
 
     // Persistence
     save: scheduleSave,
-    saveNow
+    saveNow,
+
+    // Export/Import
+    exportWorkspace,
+    importWorkspace
   };
 
 })();
