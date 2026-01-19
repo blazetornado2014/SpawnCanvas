@@ -202,6 +202,126 @@ class CanvasApp {
         this.deselectAll();
       }
     });
+
+    // ========================================
+    // DELEGATED EVENT HANDLERS FOR CANVAS ITEMS
+    // ========================================
+
+    // Delegated mousedown for items (drag) and resize handles
+    this.canvasSurface.addEventListener('mousedown', (e) => {
+      const item = e.target.closest('.canvas-item');
+      if (!item) return;
+
+      const itemId = item.dataset.itemId;
+
+      // Handle resize handles
+      if (e.target.classList.contains('resize-handle')) {
+        e.stopPropagation();
+        this.startResize(e, item, itemId, e.target);
+        return;
+      }
+
+      // Don't start drag if clicking on input/textarea or buttons
+      if (e.target.tagName === 'INPUT' ||
+          e.target.tagName === 'TEXTAREA' ||
+          e.target.tagName === 'BUTTON') {
+        return;
+      }
+
+      // Select and start drag
+      const isShiftClick = e.shiftKey;
+      if (!this.selectedItems.has(itemId)) {
+        this.selectItem(itemId, isShiftClick);
+      }
+      this.startDrag(e, item, itemId);
+    });
+
+    // Delegated click for buttons (delete, copy, color, add-checklist-item, delete-checklist-item)
+    this.canvasSurface.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (!actionBtn) return;
+
+      const action = actionBtn.dataset.action;
+      const item = e.target.closest('.canvas-item');
+      if (!item) return;
+
+      const itemId = item.dataset.itemId;
+      e.stopPropagation();
+
+      switch (action) {
+        case 'delete':
+          this.deleteItem(itemId);
+          break;
+        case 'copy':
+          this.copyItemToClipboard(itemId);
+          break;
+        case 'cycle-color':
+          this.cycleContainerColor(itemId);
+          break;
+        case 'add-checklist-item':
+          this.addChecklistItem(itemId);
+          break;
+        case 'delete-checklist-item':
+          const checklistItem = e.target.closest('.checklist-item');
+          if (checklistItem) {
+            this.deleteChecklistItem(itemId, checklistItem.dataset.itemId);
+          }
+          break;
+      }
+    });
+
+    // Delegated input for title and content changes
+    this.canvasSurface.addEventListener('input', (e) => {
+      const item = e.target.closest('.canvas-item');
+      if (!item) return;
+
+      const itemId = item.dataset.itemId;
+
+      if (e.target.classList.contains('item-title')) {
+        Store.updateItem(itemId, { title: e.target.value });
+        this.pushHistoryDebounced();
+      } else if (e.target.classList.contains('note-content')) {
+        Store.updateItem(itemId, { content: e.target.value });
+        this.pushHistoryDebounced();
+      } else if (e.target.classList.contains('item-text')) {
+        // Checklist item text
+        const checklistItem = e.target.closest('.checklist-item');
+        if (checklistItem) {
+          this.updateChecklistItemText(itemId, checklistItem.dataset.itemId, e.target.value);
+        }
+      }
+    });
+
+    // Delegated change for checkboxes
+    this.canvasSurface.addEventListener('change', (e) => {
+      if (e.target.type !== 'checkbox') return;
+
+      const item = e.target.closest('.canvas-item');
+      const checklistItem = e.target.closest('.checklist-item');
+      if (!item || !checklistItem) return;
+
+      this.toggleChecklistItem(item.dataset.itemId, checklistItem.dataset.itemId, e.target.checked);
+    });
+
+    // Delegated keydown for Enter (new item) and Tab (indentation)
+    this.canvasSurface.addEventListener('keydown', (e) => {
+      if (!e.target.classList.contains('item-text')) return;
+
+      const item = e.target.closest('.canvas-item');
+      const checklistItem = e.target.closest('.checklist-item');
+      if (!item || !checklistItem) return;
+
+      const itemId = item.dataset.itemId;
+      const checklistItemId = checklistItem.dataset.itemId;
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.addChecklistItem(itemId);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        this.toggleChecklistItemNesting(itemId, checklistItemId, !e.shiftKey);
+      }
+    });
   }
 
   async populateWorkspaceDropdown() {
@@ -846,8 +966,8 @@ class CanvasApp {
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Note title..." value="${this.escapeHtml(note.title)}">
         <div class="item-actions">
-          <button class="copy-btn" title="Copy to clipboard">📋</button>
-          <button class="delete-btn" title="Delete">🗑</button>
+          <button class="copy-btn" data-action="copy" title="Copy to clipboard">📋</button>
+          <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
         </div>
       </div>
       <div class="item-content">
@@ -858,7 +978,6 @@ class CanvasApp {
       <div class="resize-handle edge s"></div>
     `;
 
-    this.attachItemListeners(element, note.id);
     this.canvasSurface.appendChild(element);
   }
 
@@ -900,23 +1019,21 @@ class CanvasApp {
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Checklist title..." value="${this.escapeHtml(checklist.title)}">
         <div class="item-actions">
-          <button class="copy-btn" title="Copy to clipboard">📋</button>
-          <button class="delete-btn" title="Delete">🗑</button>
+          <button class="copy-btn" data-action="copy" title="Copy to clipboard">📋</button>
+          <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
         </div>
       </div>
       <div class="item-content">
         <ul class="checklist-items">
           ${this.renderChecklistItems(checklist.items)}
         </ul>
-        <div class="add-checklist-item" data-action="add-item">+ Add item</div>
+        <div class="add-checklist-item" data-action="add-checklist-item">+ Add item</div>
       </div>
       <div class="resize-handle corner se"></div>
       <div class="resize-handle edge e"></div>
       <div class="resize-handle edge s"></div>
     `;
 
-    this.attachItemListeners(element, checklist.id);
-    this.attachChecklistListeners(element, checklist.id);
     this.canvasSurface.appendChild(element);
   }
 
@@ -927,58 +1044,9 @@ class CanvasApp {
       <li class="checklist-item ${item.completed ? 'completed' : ''} ${item.nested ? `nested-${item.nested}` : ''}" data-item-id="${item.id}">
         <input type="checkbox" ${item.completed ? 'checked' : ''}>
         <input type="text" class="item-text" value="${this.escapeHtml(item.text)}" placeholder="Item...">
-        <button class="item-delete" title="Delete item">×</button>
+        <button class="item-delete" data-action="delete-checklist-item" title="Delete item">×</button>
       </li>
     `).join('');
-  }
-
-  attachChecklistListeners(element, checklistId) {
-    const content = element.querySelector('.item-content');
-
-    // Add item button
-    content.querySelector('.add-checklist-item').addEventListener('click', () => {
-      this.addChecklistItem(checklistId);
-    });
-
-    // Delegate events for checklist items
-    content.addEventListener('change', (e) => {
-      if (e.target.type === 'checkbox') {
-        const li = e.target.closest('.checklist-item');
-        const itemId = li.dataset.itemId;
-        this.toggleChecklistItem(checklistId, itemId, e.target.checked);
-      }
-    });
-
-    content.addEventListener('input', (e) => {
-      if (e.target.classList.contains('item-text')) {
-        const li = e.target.closest('.checklist-item');
-        const itemId = li.dataset.itemId;
-        this.updateChecklistItemText(checklistId, itemId, e.target.value);
-      }
-    });
-
-    content.addEventListener('click', (e) => {
-      if (e.target.classList.contains('item-delete')) {
-        const li = e.target.closest('.checklist-item');
-        const itemId = li.dataset.itemId;
-        this.deleteChecklistItem(checklistId, itemId);
-      }
-    });
-
-    // Handle Enter key to add new item
-    content.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target.classList.contains('item-text')) {
-        e.preventDefault();
-        this.addChecklistItem(checklistId);
-      }
-      // Tab for indentation
-      if (e.key === 'Tab' && e.target.classList.contains('item-text')) {
-        e.preventDefault();
-        const li = e.target.closest('.checklist-item');
-        const itemId = li.dataset.itemId;
-        this.toggleChecklistItemNesting(checklistId, itemId, !e.shiftKey);
-      }
-    });
   }
 
   addChecklistItem(checklistId) {
@@ -1139,8 +1207,8 @@ class CanvasApp {
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Container title..." value="${this.escapeHtml(container.title)}">
         <div class="item-actions">
-          <button class="color-btn" title="Change color">🎨</button>
-          <button class="delete-btn" title="Delete">🗑</button>
+          <button class="color-btn" data-action="cycle-color" title="Change color">🎨</button>
+          <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
         </div>
       </div>
       <div class="container-content">
@@ -1151,18 +1219,7 @@ class CanvasApp {
       <div class="resize-handle edge s"></div>
     `;
 
-    this.attachItemListeners(element, container.id);
-    this.attachContainerListeners(element, container.id);
     this.canvasSurface.appendChild(element);
-  }
-
-  attachContainerListeners(element, containerId) {
-    const colorBtn = element.querySelector('.color-btn');
-
-    colorBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.cycleContainerColor(containerId);
-    });
   }
 
   cycleContainerColor(containerId) {
@@ -1184,73 +1241,6 @@ class CanvasApp {
       colors.forEach(c => element.classList.remove(`color-${c}`));
       element.classList.add(`color-${newColor}`);
     }
-  }
-
-  attachItemListeners(element, itemId) {
-    element.addEventListener('mousedown', (e) => {
-      // Don't select if clicking on input/textarea or buttons
-      if (e.target.tagName === 'INPUT' ||
-        e.target.tagName === 'TEXTAREA' ||
-        e.target.tagName === 'BUTTON' ||
-        e.target.classList.contains('resize-handle')) {
-        return;
-      }
-
-      const isShiftClick = e.shiftKey;
-      if (!this.selectedItems.has(itemId)) {
-        this.selectItem(itemId, isShiftClick);
-      }
-
-      this.startDrag(e, element, itemId);
-    });
-
-    const titleInput = element.querySelector('.item-title');
-    if (titleInput) {
-      titleInput.addEventListener('input', (e) => {
-        Store.updateItem(itemId, { title: e.target.value });
-        this.pushHistoryDebounced();
-      });
-
-      titleInput.addEventListener('mousedown', (e) => {
-        e.stopPropagation(); // Prevent drag start
-      });
-    }
-
-    const noteContent = element.querySelector('.note-content');
-    if (noteContent) {
-      noteContent.addEventListener('input', (e) => {
-        Store.updateItem(itemId, { content: e.target.value });
-        this.pushHistoryDebounced();
-      });
-
-      noteContent.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-      });
-    }
-
-    const deleteBtn = element.querySelector('.delete-btn');
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.deleteItem(itemId);
-      });
-    }
-
-    const copyBtn = element.querySelector('.copy-btn');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.copyItemToClipboard(itemId);
-      });
-    }
-
-    const resizeHandles = element.querySelectorAll('.resize-handle');
-    resizeHandles.forEach(handle => {
-      handle.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-        this.startResize(e, element, itemId, handle);
-      });
-    });
   }
 
   /**
