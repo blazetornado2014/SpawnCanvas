@@ -571,6 +571,83 @@
         margin: 4px 0;
       }
 
+      .settings-ai {
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .settings-ai label {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .ai-provider-select {
+        background: var(--item-bg);
+        border: 1px solid var(--item-border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        color: var(--text-primary);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .ai-provider-select:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .api-key-input {
+        background: var(--item-bg);
+        border: 1px solid var(--item-border);
+        border-radius: 4px;
+        padding: 6px 8px;
+        color: var(--text-primary);
+        font-size: 12px;
+        font-family: monospace;
+        width: 100%;
+      }
+
+      .api-key-input:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .api-key-save {
+        background: var(--accent);
+        border: none;
+        border-radius: 4px;
+        padding: 6px 12px;
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+      }
+
+      .api-key-save:hover {
+        background: var(--accent-hover);
+      }
+
+      .generate-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 4px 6px;
+        font-size: 12px;
+        border-radius: 3px;
+        transition: background-color var(--transition-fast);
+      }
+
+      .generate-btn:hover {
+        background: var(--item-border);
+      }
+
+      .generate-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;

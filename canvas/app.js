@@ -104,6 +104,18 @@ class CanvasApp {
               <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
               <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
               <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
+              <div class="settings-menu-divider"></div>
+              <div class="settings-ai">
+                <label>🤖 AI Provider</label>
+                <select class="ai-provider-select">
+                  <option value="claude">Claude (Anthropic)</option>
+                  <option value="openai">OpenAI (GPT-4o)</option>
+                  <option value="gemini">Gemini (Google)</option>
+                </select>
+                <label>🔑 API Key</label>
+                <input type="password" class="api-key-input" placeholder="Enter API key...">
+                <button class="api-key-save" data-action="save-api-key">Save</button>
+              </div>
             </div>
           </div>
           <button class="add-btn" data-action="add-note">+ Note</button>
@@ -135,6 +147,8 @@ class CanvasApp {
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
     this.importFileInput = this.wrapper.querySelector('.import-file-input');
     this.settingsDropdown = this.wrapper.querySelector('.settings-dropdown');
+    this.apiKeyInput = this.wrapper.querySelector('.api-key-input');
+    this.aiProviderSelect = this.wrapper.querySelector('.ai-provider-select');
   }
 
   attachEventListeners() {
@@ -290,6 +304,9 @@ class CanvasApp {
           if (checklistItem) {
             this.deleteChecklistItem(itemId, checklistItem.dataset.itemId);
           }
+          break;
+        case 'generate-checklist':
+          this.generateChecklistItems(itemId);
           break;
       }
     });
@@ -689,15 +706,46 @@ class CanvasApp {
       case 'toggle-settings':
         this.toggleSettingsMenu();
         break;
+      case 'save-api-key':
+        this.saveApiKey();
+        break;
     }
   }
 
-  toggleSettingsMenu() {
+  async toggleSettingsMenu() {
+    const isOpening = !this.settingsDropdown.classList.contains('open');
     this.settingsDropdown.classList.toggle('open');
+
+    // Load settings when opening
+    if (isOpening) {
+      const [apiKey, provider] = await Promise.all([
+        Store.getApiKey(),
+        Store.getAiProvider()
+      ]);
+      this.apiKeyInput.value = apiKey || '';
+      this.aiProviderSelect.value = provider || 'claude';
+    }
   }
 
   closeSettingsMenu() {
     this.settingsDropdown.classList.remove('open');
+  }
+
+  async saveApiKey() {
+    const apiKey = this.apiKeyInput.value.trim();
+    const provider = this.aiProviderSelect.value;
+
+    await Promise.all([
+      Store.setApiKey(apiKey),
+      Store.setAiProvider(provider)
+    ]);
+
+    if (apiKey) {
+      alert(`Settings saved!\nProvider: ${provider}\nAPI key: ${apiKey.substring(0, 10)}...`);
+    } else {
+      alert('API key cleared.');
+    }
+    this.closeSettingsMenu();
   }
 
   handleCanvasMouseDown(e) {
@@ -1151,6 +1199,7 @@ class CanvasApp {
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Checklist title..." value="${this.escapeHtml(checklist.title)}">
         <div class="item-actions">
+          <button class="generate-btn" data-action="generate-checklist" title="Generate items with AI">✨</button>
           <button class="copy-btn" data-action="copy" title="Copy to clipboard">📋</button>
           <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
         </div>
@@ -1213,8 +1262,67 @@ class CanvasApp {
         inputs[inputs.length - 1].focus();
       }
     }, 0);
+  }
 
+  async generateChecklistItems(checklistId) {
+    const checklist = Store.getItem(checklistId);
+    if (!checklist) return;
 
+    const [apiKey, provider] = await Promise.all([
+      Store.getApiKey(),
+      Store.getAiProvider()
+    ]);
+
+    if (!apiKey) {
+      alert('Please set your API key in Settings (gear icon) first.');
+      return;
+    }
+
+    if (!checklist.title || checklist.title.trim() === '') {
+      alert('Please enter a checklist title first.');
+      return;
+    }
+
+    // Show loading state
+    const element = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"]`);
+    const generateBtn = element.querySelector('.generate-btn');
+    const originalText = generateBtn.textContent;
+    generateBtn.textContent = '⏳';
+    generateBtn.disabled = true;
+
+    try {
+      const items = await AIService.generateChecklistItems(checklist.title, apiKey, provider);
+
+      // Save state before adding items
+      this.pushHistory();
+
+      // Add generated items
+      for (const text of items) {
+        const newItem = {
+          id: `ci_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          text: text,
+          completed: false,
+          nested: 0
+        };
+        checklist.items.push(newItem);
+      }
+
+      Store.updateItem(checklistId, { items: checklist.items });
+
+      // Re-render checklist items
+      const ul = element.querySelector('.checklist-items');
+      ul.innerHTML = this.renderChecklistItems(checklist.items);
+
+      // Auto-resize
+      setTimeout(() => this.autoResizeChecklist(checklistId), 0);
+
+    } catch (err) {
+      console.error('[SpawnCanvas] AI generation error:', err);
+      alert('AI generation failed: ' + err.message);
+    } finally {
+      generateBtn.textContent = originalText;
+      generateBtn.disabled = false;
+    }
   }
 
   toggleChecklistItem(checklistId, itemId, completed) {

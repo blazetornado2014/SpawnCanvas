@@ -11,6 +11,8 @@ const Store = (function() {
   const WORKSPACES_LIST_KEY = STORAGE_PREFIX + 'workspaces_list';
   const CURRENT_WORKSPACE_KEY = STORAGE_PREFIX + 'current_workspace';
   const WORKSPACE_PREFIX = STORAGE_PREFIX + 'workspace_';
+  const API_KEY_KEY = STORAGE_PREFIX + 'api_key';
+  const AI_PROVIDER_KEY = STORAGE_PREFIX + 'ai_provider';
 
   // Default workspace
   const DEFAULT_WORKSPACE_ID = 'default';
@@ -694,6 +696,72 @@ const Store = (function() {
   }
 
   // ============================================
+  // API KEY MANAGEMENT
+  // ============================================
+
+  /**
+   * Get the stored API key
+   * @returns {Promise<string|null>} API key or null
+   */
+  async function getApiKey() {
+    if (!isStorageAvailable()) return null;
+    try {
+      const result = await chrome.storage.local.get(API_KEY_KEY);
+      return result[API_KEY_KEY] || null;
+    } catch (err) {
+      console.error('[Store] Error getting API key:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Set the API key
+   * @param {string} apiKey - The API key to store
+   * @returns {Promise<boolean>} Success
+   */
+  async function setApiKey(apiKey) {
+    if (!isStorageAvailable()) return false;
+    try {
+      await chrome.storage.local.set({ [API_KEY_KEY]: apiKey });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting API key:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Get the stored AI provider
+   * @returns {Promise<string>} Provider name ('claude', 'openai', 'gemini')
+   */
+  async function getAiProvider() {
+    if (!isStorageAvailable()) return 'claude';
+    try {
+      const result = await chrome.storage.local.get(AI_PROVIDER_KEY);
+      return result[AI_PROVIDER_KEY] || 'claude';
+    } catch (err) {
+      console.error('[Store] Error getting AI provider:', err);
+      return 'claude';
+    }
+  }
+
+  /**
+   * Set the AI provider
+   * @param {string} provider - Provider name ('claude', 'openai', 'gemini')
+   * @returns {Promise<boolean>} Success
+   */
+  async function setAiProvider(provider) {
+    if (!isStorageAvailable()) return false;
+    try {
+      await chrome.storage.local.set({ [AI_PROVIDER_KEY]: provider });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting AI provider:', err);
+      return false;
+    }
+  }
+
+  // ============================================
   // PERSISTENCE
   // ============================================
 
@@ -803,7 +871,13 @@ const Store = (function() {
     exportWorkspace,
     importWorkspace,
     exportAllWorkspaces,
-    importAllWorkspaces
+    importAllWorkspaces,
+
+    // API Key & Provider
+    getApiKey,
+    setApiKey,
+    getAiProvider,
+    setAiProvider
   };
 
 })();
