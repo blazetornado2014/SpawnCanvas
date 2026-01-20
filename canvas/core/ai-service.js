@@ -21,7 +21,7 @@ const AIService = (function () {
     gemini: {
       name: 'Gemini',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-      model: 'gemini-2.0-flash'
+      model: 'gemini-2.5-flash'
     }
   };
 
