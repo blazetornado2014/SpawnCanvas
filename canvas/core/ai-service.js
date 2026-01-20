@@ -153,21 +153,21 @@ const AIService = (function () {
 
     // Fallback to default if PromptManager isn't available
     if (!promptTemplate) {
-      promptTemplate = `Generate a checklist of actionable items for: "{title}"
+      promptTemplate = `Generate a checklist based on this request: "{prompt}"
 
 Rules:
 - Return ONLY the checklist items, one per line
 - Each item should be a clear, actionable task
 - Keep items concise (under 10 words each)
-- Generate 5-10 items
+- Generate 5-10 relevant items
 - Do not include numbers, bullets, or checkboxes
 - Do not include any explanation or preamble`;
     }
 
-    // Build the prompt with title placeholder replaced
+    // Build the prompt with placeholder replaced
     const prompt = typeof PromptManager !== 'undefined'
       ? PromptManager.buildPrompt(promptTemplate, title)
-      : promptTemplate.replace(/{title}/g, title);
+      : promptTemplate.replace(/{prompt}/g, title);
 
     const content = await callProvider(prompt, apiKey, provider);
 
@@ -210,18 +210,19 @@ Rules:
 
     // Fallback to default if PromptManager isn't available
     if (!promptTemplate) {
-      promptTemplate = `Write content for a note titled: "{title}"
+      promptTemplate = `Write content based on this request: "{prompt}"
 
 Rules:
 - Keep it concise and useful
 - Use plain text, no markdown
-- 2-4 paragraphs maximum`;
+- 2-4 paragraphs maximum
+- Be informative and relevant to the request`;
     }
 
-    // Build the prompt with title placeholder replaced
+    // Build the prompt with placeholder replaced
     let prompt = typeof PromptManager !== 'undefined'
       ? PromptManager.buildPrompt(promptTemplate, title)
-      : promptTemplate.replace(/{title}/g, title);
+      : promptTemplate.replace(/{prompt}/g, title);
 
     // Append existing content if available
     if (existingContent && existingContent.trim()) {

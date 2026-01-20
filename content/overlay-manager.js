@@ -799,6 +799,145 @@
         font-size: 16px;
       }
 
+      /* AI Input Modal */
+      .ai-input-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: calc(var(--z-toolbar) + 20);
+      }
+
+      .ai-input-modal.open {
+        display: flex;
+      }
+
+      .ai-input-modal-content {
+        background: var(--toolbar-bg);
+        border: 1px solid var(--item-border);
+        border-radius: 8px;
+        width: 500px;
+        max-width: 90vw;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .ai-input-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--item-border);
+      }
+
+      .ai-input-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .ai-input-modal-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 24px;
+        cursor: pointer;
+        padding: 4px 8px;
+        line-height: 1;
+        transition: color var(--transition-fast);
+      }
+
+      .ai-input-modal-close:hover {
+        color: var(--text-primary);
+      }
+
+      .ai-input-modal-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ai-input-modal-body label {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .ai-input-textarea {
+        width: 100%;
+        min-height: 100px;
+        background: var(--item-bg);
+        border: 1px solid var(--item-border);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 14px;
+        padding: 12px;
+        border-radius: 4px;
+        resize: vertical;
+        line-height: 1.5;
+      }
+
+      .ai-input-textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .ai-input-textarea::placeholder {
+        color: var(--text-muted);
+      }
+
+      .ai-input-hint {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .ai-input-modal-footer {
+        padding: 16px 20px;
+        border-top: 1px solid var(--item-border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .ai-input-cancel-btn {
+        background: transparent;
+        border: 1px solid var(--item-border);
+        color: var(--text-secondary);
+        padding: 10px 20px;
+        border-radius: 4px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+      }
+
+      .ai-input-cancel-btn:hover {
+        background: var(--item-border);
+        color: var(--text-primary);
+      }
+
+      .ai-input-submit-btn {
+        background: var(--accent);
+        border: none;
+        color: white;
+        padding: 10px 24px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+      }
+
+      .ai-input-submit-btn:hover {
+        background: var(--accent-hover);
+      }
+
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;

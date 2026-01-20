@@ -8,22 +8,23 @@ const PromptManager = (function() {
 
   // Default prompts
   const DEFAULTS = {
-    checklist: `Generate a checklist of actionable items for: "{title}"
+    checklist: `Generate a checklist based on this request: "{prompt}"
 
 Rules:
 - Return ONLY the checklist items, one per line
 - Each item should be a clear, actionable task
 - Keep items concise (under 10 words each)
-- Generate 5-10 items
+- Generate 5-10 relevant items
 - Do not include numbers, bullets, or checkboxes
 - Do not include any explanation or preamble`,
 
-    note: `Write content for a note titled: "{title}"
+    note: `Write content based on this request: "{prompt}"
 
 Rules:
 - Keep it concise and useful
 - Use plain text, no markdown
-- 2-4 paragraphs maximum`
+- 2-4 paragraphs maximum
+- Be informative and relevant to the request`
   };
 
   /**
@@ -81,13 +82,13 @@ Rules:
   }
 
   /**
-   * Build a prompt with the title placeholder replaced
+   * Build a prompt with the placeholder replaced
    * @param {string} template - The prompt template
-   * @param {string} title - The title to insert
+   * @param {string} userPrompt - The user's prompt to insert
    * @returns {string} The completed prompt
    */
-  function buildPrompt(template, title) {
-    return template.replace(/{title}/g, title);
+  function buildPrompt(template, userPrompt) {
+    return template.replace(/{prompt}/g, userPrompt);
   }
 
   return {

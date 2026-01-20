@@ -145,19 +145,36 @@ class CanvasApp {
           <div class="prompts-modal-body">
             <div class="prompt-section">
               <label>Checklist Generation Prompt</label>
-              <p class="prompt-hint">Use {title} as placeholder for checklist title</p>
-              <textarea class="prompt-textarea checklist-prompt" placeholder="Enter custom checklist prompt..."></textarea>
+              <p class="prompt-hint">Use {prompt} as placeholder for user's input</p>
+              <textarea class="prompt-textarea checklist-prompt" placeholder="Enter custom checklist system prompt..."></textarea>
               <button class="prompt-reset-btn" data-action="reset-checklist-prompt">Reset to Default</button>
             </div>
             <div class="prompt-section">
               <label>Note Expansion Prompt</label>
-              <p class="prompt-hint">Use {title} as placeholder for note title</p>
-              <textarea class="prompt-textarea note-prompt" placeholder="Enter custom note prompt..."></textarea>
+              <p class="prompt-hint">Use {prompt} as placeholder for user's input</p>
+              <textarea class="prompt-textarea note-prompt" placeholder="Enter custom note system prompt..."></textarea>
               <button class="prompt-reset-btn" data-action="reset-note-prompt">Reset to Default</button>
             </div>
           </div>
           <div class="prompts-modal-footer">
             <button class="prompts-save-btn" data-action="save-prompts">Save</button>
+          </div>
+        </div>
+      </div>
+      <div class="ai-input-modal">
+        <div class="ai-input-modal-content">
+          <div class="ai-input-modal-header">
+            <h3 class="ai-input-title">Generate with AI</h3>
+            <button class="ai-input-modal-close" data-action="close-ai-input">×</button>
+          </div>
+          <div class="ai-input-modal-body">
+            <label>What would you like to generate?</label>
+            <textarea class="ai-input-textarea" placeholder="E.g., Create a checklist for planning a birthday party..."></textarea>
+            <p class="ai-input-hint">Tip: Be specific about what you want. The item title will be used as context.</p>
+          </div>
+          <div class="ai-input-modal-footer">
+            <button class="ai-input-cancel-btn" data-action="close-ai-input">Cancel</button>
+            <button class="ai-input-submit-btn" data-action="submit-ai-input">Generate</button>
           </div>
         </div>
       </div>
@@ -178,6 +195,12 @@ class CanvasApp {
     this.promptsModal = this.wrapper.querySelector('.prompts-modal');
     this.checklistPromptTextarea = this.wrapper.querySelector('.checklist-prompt');
     this.notePromptTextarea = this.wrapper.querySelector('.note-prompt');
+    this.aiInputModal = this.wrapper.querySelector('.ai-input-modal');
+    this.aiInputTextarea = this.wrapper.querySelector('.ai-input-textarea');
+    this.aiInputTitle = this.wrapper.querySelector('.ai-input-title');
+
+    // State for AI input modal
+    this.aiInputTarget = null; // { id: string, type: 'checklist' | 'note' }
   }
 
   attachEventListeners() {
@@ -258,6 +281,29 @@ class CanvasApp {
       const action = e.target.closest('[data-action]')?.dataset.action;
       if (action) {
         this.handleToolbarAction(action);
+      }
+    });
+
+    // Handle AI input modal clicks (delegated)
+    this.aiInputModal.addEventListener('click', (e) => {
+      // Close when clicking on the backdrop
+      if (e.target === this.aiInputModal) {
+        this.closeAiInputModal();
+        return;
+      }
+
+      // Handle action buttons
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action) {
+        this.handleToolbarAction(action);
+      }
+    });
+
+    // Handle Enter key in AI input textarea (Ctrl+Enter to submit)
+    this.aiInputTextarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        this.submitAiInput();
       }
     });
 
@@ -350,10 +396,10 @@ class CanvasApp {
           }
           break;
         case 'generate-checklist':
-          this.generateChecklistItems(itemId);
+          this.openAiInputModal(itemId, 'checklist');
           break;
         case 'expand-note':
-          this.expandNoteContent(itemId);
+          this.openAiInputModal(itemId, 'note');
           break;
       }
     });
@@ -771,6 +817,12 @@ class CanvasApp {
       case 'reset-note-prompt':
         this.resetNotePrompt();
         break;
+      case 'close-ai-input':
+        this.closeAiInputModal();
+        break;
+      case 'submit-ai-input':
+        this.submitAiInput();
+        break;
     }
   }
 
@@ -853,6 +905,59 @@ class CanvasApp {
     const defaultPrompt = PromptManager.getDefault('note');
     this.notePromptTextarea.value = defaultPrompt;
     await PromptManager.resetToDefault('note');
+  }
+
+  openAiInputModal(itemId, type) {
+    const item = Store.getItem(itemId);
+    if (!item) return;
+
+    // Set the target
+    this.aiInputTarget = { id: itemId, type };
+
+    // Update modal title based on type
+    if (type === 'checklist') {
+      this.aiInputTitle.textContent = 'Generate Checklist Items';
+      this.aiInputTextarea.placeholder = `E.g., Create a checklist for "${item.title || 'untitled'}"...\n\nOr describe what items you need...`;
+    } else {
+      this.aiInputTitle.textContent = 'Expand Note with AI';
+      this.aiInputTextarea.placeholder = `E.g., Write about "${item.title || 'untitled'}"...\n\nOr describe what content you want...`;
+    }
+
+    // Pre-fill with title if no existing content
+    if (item.title && item.title.trim()) {
+      this.aiInputTextarea.value = item.title;
+    } else {
+      this.aiInputTextarea.value = '';
+    }
+
+    this.aiInputModal.classList.add('open');
+    this.aiInputTextarea.focus();
+    this.aiInputTextarea.select();
+  }
+
+  closeAiInputModal() {
+    this.aiInputModal.classList.remove('open');
+    this.aiInputTarget = null;
+    this.aiInputTextarea.value = '';
+  }
+
+  async submitAiInput() {
+    if (!this.aiInputTarget) return;
+
+    const userPrompt = this.aiInputTextarea.value.trim();
+    if (!userPrompt) {
+      alert('Please enter a prompt.');
+      return;
+    }
+
+    const { id, type } = this.aiInputTarget;
+    this.closeAiInputModal();
+
+    if (type === 'checklist') {
+      await this.generateChecklistItems(id, userPrompt);
+    } else {
+      await this.expandNoteContent(id, userPrompt);
+    }
   }
 
   handleCanvasMouseDown(e) {
@@ -1372,7 +1477,7 @@ class CanvasApp {
     }, 0);
   }
 
-  async generateChecklistItems(checklistId) {
+  async generateChecklistItems(checklistId, userPrompt) {
     const checklist = Store.getItem(checklistId);
     if (!checklist) return;
 
@@ -1386,11 +1491,6 @@ class CanvasApp {
       return;
     }
 
-    if (!checklist.title || checklist.title.trim() === '') {
-      alert('Please enter a checklist title first.');
-      return;
-    }
-
     // Show loading state
     const element = this.canvasSurface.querySelector(`[data-item-id="${checklistId}"]`);
     const generateBtn = element.querySelector('.generate-btn');
@@ -1399,7 +1499,7 @@ class CanvasApp {
     generateBtn.disabled = true;
 
     try {
-      const items = await AIService.generateChecklistItems(checklist.title, apiKey, provider);
+      const items = await AIService.generateChecklistItems(userPrompt, apiKey, provider);
 
       // Save state before adding items
       this.pushHistory();
@@ -1433,7 +1533,7 @@ class CanvasApp {
     }
   }
 
-  async expandNoteContent(noteId) {
+  async expandNoteContent(noteId, userPrompt) {
     const note = Store.getItem(noteId);
     if (!note) return;
 
@@ -1447,11 +1547,6 @@ class CanvasApp {
       return;
     }
 
-    if (!note.title || note.title.trim() === '') {
-      alert('Please enter a note title first.');
-      return;
-    }
-
     // Show loading state
     const element = this.canvasSurface.querySelector(`[data-item-id="${noteId}"]`);
     const expandBtn = element.querySelector('[data-action="expand-note"]');
@@ -1460,7 +1555,7 @@ class CanvasApp {
     expandBtn.disabled = true;
 
     try {
-      const content = await AIService.expandNote(note.title, note.content, apiKey, provider);
+      const content = await AIService.expandNote(userPrompt, note.content, apiKey, provider);
 
       // Save state before updating
       this.pushHistory();
