@@ -133,9 +133,10 @@ const AIService = (function () {
    * @param {string} title - The checklist title or prompt
    * @param {string} apiKey - API key
    * @param {string} provider - Provider name ('claude', 'openai', 'gemini')
+   * @param {string} customPrompt - Optional custom prompt template
    * @returns {Promise<string[]>} Array of checklist item texts
    */
-  async function generateChecklistItems(title, apiKey, provider = 'claude') {
+  async function generateChecklistItems(title, apiKey, provider = 'claude', customPrompt = null) {
     if (!apiKey) {
       throw new Error('API key not configured');
     }
@@ -144,7 +145,15 @@ const AIService = (function () {
       throw new Error('Please enter a title first');
     }
 
-    const prompt = `Generate a checklist of actionable items for: "${title}"
+    // Get the prompt template - use custom if provided, otherwise fetch from PromptManager
+    let promptTemplate = customPrompt;
+    if (!promptTemplate && typeof PromptManager !== 'undefined') {
+      promptTemplate = await PromptManager.getPrompt('checklist');
+    }
+
+    // Fallback to default if PromptManager isn't available
+    if (!promptTemplate) {
+      promptTemplate = `Generate a checklist of actionable items for: "{title}"
 
 Rules:
 - Return ONLY the checklist items, one per line
@@ -153,6 +162,12 @@ Rules:
 - Generate 5-10 items
 - Do not include numbers, bullets, or checkboxes
 - Do not include any explanation or preamble`;
+    }
+
+    // Build the prompt with title placeholder replaced
+    const prompt = typeof PromptManager !== 'undefined'
+      ? PromptManager.buildPrompt(promptTemplate, title)
+      : promptTemplate.replace(/{title}/g, title);
 
     const content = await callProvider(prompt, apiKey, provider);
 
@@ -175,9 +190,10 @@ Rules:
    * @param {string} existingContent - Any existing content
    * @param {string} apiKey - API key
    * @param {string} provider - Provider name
+   * @param {string} customPrompt - Optional custom prompt template
    * @returns {Promise<string>} Generated content
    */
-  async function expandNote(title, existingContent, apiKey, provider = 'claude') {
+  async function expandNote(title, existingContent, apiKey, provider = 'claude', customPrompt = null) {
     if (!apiKey) {
       throw new Error('API key not configured');
     }
@@ -186,16 +202,31 @@ Rules:
       throw new Error('Please enter a title first');
     }
 
-    let prompt = `Write content for a note titled: "${title}"`;
-
-    if (existingContent && existingContent.trim()) {
-      prompt += `\n\nExisting content to expand on:\n${existingContent}`;
+    // Get the prompt template - use custom if provided, otherwise fetch from PromptManager
+    let promptTemplate = customPrompt;
+    if (!promptTemplate && typeof PromptManager !== 'undefined') {
+      promptTemplate = await PromptManager.getPrompt('note');
     }
 
-    prompt += `\n\nRules:
+    // Fallback to default if PromptManager isn't available
+    if (!promptTemplate) {
+      promptTemplate = `Write content for a note titled: "{title}"
+
+Rules:
 - Keep it concise and useful
 - Use plain text, no markdown
 - 2-4 paragraphs maximum`;
+    }
+
+    // Build the prompt with title placeholder replaced
+    let prompt = typeof PromptManager !== 'undefined'
+      ? PromptManager.buildPrompt(promptTemplate, title)
+      : promptTemplate.replace(/{title}/g, title);
+
+    // Append existing content if available
+    if (existingContent && existingContent.trim()) {
+      prompt += `\n\nExisting content to expand on:\n${existingContent}`;
+    }
 
     return callProvider(prompt, apiKey, provider);
   }

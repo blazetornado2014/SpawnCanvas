@@ -648,6 +648,157 @@
         cursor: not-allowed;
       }
 
+      /* Prompts Modal */
+      .prompts-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.7);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: calc(var(--z-toolbar) + 10);
+      }
+
+      .prompts-modal.open {
+        display: flex;
+      }
+
+      .prompts-modal-content {
+        background: var(--toolbar-bg);
+        border: 1px solid var(--item-border);
+        border-radius: 8px;
+        width: 600px;
+        max-width: 90vw;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .prompts-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--item-border);
+      }
+
+      .prompts-modal-header h3 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .prompts-modal-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 24px;
+        cursor: pointer;
+        padding: 4px 8px;
+        line-height: 1;
+        transition: color var(--transition-fast);
+      }
+
+      .prompts-modal-close:hover {
+        color: var(--text-primary);
+      }
+
+      .prompts-modal-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      .prompt-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .prompt-section label {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .prompt-hint {
+        font-size: 12px;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+
+      .prompt-textarea {
+        width: 100%;
+        min-height: 120px;
+        background: var(--item-bg);
+        border: 1px solid var(--item-border);
+        color: var(--text-primary);
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 12px;
+        padding: 12px;
+        border-radius: 4px;
+        resize: vertical;
+        line-height: 1.5;
+      }
+
+      .prompt-textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+      }
+
+      .prompt-textarea::placeholder {
+        color: var(--text-muted);
+      }
+
+      .prompt-reset-btn {
+        align-self: flex-start;
+        background: transparent;
+        border: 1px solid var(--item-border);
+        color: var(--text-secondary);
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+      }
+
+      .prompt-reset-btn:hover {
+        background: var(--item-border);
+        color: var(--text-primary);
+      }
+
+      .prompts-modal-footer {
+        padding: 16px 20px;
+        border-top: 1px solid var(--item-border);
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      .prompts-save-btn {
+        background: var(--accent);
+        border: none;
+        color: white;
+        padding: 10px 24px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+      }
+
+      .prompts-save-btn:hover {
+        background: var(--accent-hover);
+      }
+
+      .prompts-btn {
+        font-size: 16px;
+      }
+
       ::-webkit-scrollbar {
         width: 8px;
         height: 8px;

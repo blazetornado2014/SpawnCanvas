@@ -118,6 +118,7 @@ class CanvasApp {
               </div>
             </div>
           </div>
+          <button class="prompts-btn icon-btn" data-action="toggle-prompts" title="Edit AI Prompts">📝</button>
           <button class="add-btn" data-action="add-note">+ Note</button>
           <button class="add-btn" data-action="add-checklist">+ Checklist</button>
           <button class="add-btn" data-action="add-container">+ Container</button>
@@ -135,6 +136,31 @@ class CanvasApp {
         </div>
       </div>
       <input type="file" class="import-file-input" accept=".json" style="display: none;">
+      <div class="prompts-modal">
+        <div class="prompts-modal-content">
+          <div class="prompts-modal-header">
+            <h3>AI Prompts</h3>
+            <button class="prompts-modal-close" data-action="close-prompts">×</button>
+          </div>
+          <div class="prompts-modal-body">
+            <div class="prompt-section">
+              <label>Checklist Generation Prompt</label>
+              <p class="prompt-hint">Use {title} as placeholder for checklist title</p>
+              <textarea class="prompt-textarea checklist-prompt" placeholder="Enter custom checklist prompt..."></textarea>
+              <button class="prompt-reset-btn" data-action="reset-checklist-prompt">Reset to Default</button>
+            </div>
+            <div class="prompt-section">
+              <label>Note Expansion Prompt</label>
+              <p class="prompt-hint">Use {title} as placeholder for note title</p>
+              <textarea class="prompt-textarea note-prompt" placeholder="Enter custom note prompt..."></textarea>
+              <button class="prompt-reset-btn" data-action="reset-note-prompt">Reset to Default</button>
+            </div>
+          </div>
+          <div class="prompts-modal-footer">
+            <button class="prompts-save-btn" data-action="save-prompts">Save</button>
+          </div>
+        </div>
+      </div>
     `;
 
     this.shadowRoot.appendChild(this.wrapper);
@@ -149,6 +175,9 @@ class CanvasApp {
     this.settingsDropdown = this.wrapper.querySelector('.settings-dropdown');
     this.apiKeyInput = this.wrapper.querySelector('.api-key-input');
     this.aiProviderSelect = this.wrapper.querySelector('.ai-provider-select');
+    this.promptsModal = this.wrapper.querySelector('.prompts-modal');
+    this.checklistPromptTextarea = this.wrapper.querySelector('.checklist-prompt');
+    this.notePromptTextarea = this.wrapper.querySelector('.note-prompt');
   }
 
   attachEventListeners() {
@@ -214,6 +243,21 @@ class CanvasApp {
     this.wrapper.addEventListener('click', (e) => {
       if (!e.target.closest('.settings-dropdown')) {
         this.closeSettingsMenu();
+      }
+    });
+
+    // Handle prompts modal clicks (delegated)
+    this.promptsModal.addEventListener('click', (e) => {
+      // Close when clicking on the backdrop (not the content)
+      if (e.target === this.promptsModal) {
+        this.closePromptsModal();
+        return;
+      }
+
+      // Handle action buttons
+      const action = e.target.closest('[data-action]')?.dataset.action;
+      if (action) {
+        this.handleToolbarAction(action);
       }
     });
 
@@ -307,6 +351,9 @@ class CanvasApp {
           break;
         case 'generate-checklist':
           this.generateChecklistItems(itemId);
+          break;
+        case 'expand-note':
+          this.expandNoteContent(itemId);
           break;
       }
     });
@@ -709,6 +756,21 @@ class CanvasApp {
       case 'save-api-key':
         this.saveApiKey();
         break;
+      case 'toggle-prompts':
+        this.togglePromptsModal();
+        break;
+      case 'close-prompts':
+        this.closePromptsModal();
+        break;
+      case 'save-prompts':
+        this.savePrompts();
+        break;
+      case 'reset-checklist-prompt':
+        this.resetChecklistPrompt();
+        break;
+      case 'reset-note-prompt':
+        this.resetNotePrompt();
+        break;
     }
   }
 
@@ -746,6 +808,51 @@ class CanvasApp {
       alert('API key cleared.');
     }
     this.closeSettingsMenu();
+  }
+
+  async togglePromptsModal() {
+    const isOpening = !this.promptsModal.classList.contains('open');
+
+    if (isOpening) {
+      // Load current prompts when opening
+      const [checklistPrompt, notePrompt] = await Promise.all([
+        PromptManager.getPrompt('checklist'),
+        PromptManager.getPrompt('note')
+      ]);
+      this.checklistPromptTextarea.value = checklistPrompt;
+      this.notePromptTextarea.value = notePrompt;
+    }
+
+    this.promptsModal.classList.toggle('open');
+  }
+
+  closePromptsModal() {
+    this.promptsModal.classList.remove('open');
+  }
+
+  async savePrompts() {
+    const checklistPrompt = this.checklistPromptTextarea.value.trim();
+    const notePrompt = this.notePromptTextarea.value.trim();
+
+    await Promise.all([
+      PromptManager.setPrompt('checklist', checklistPrompt || null),
+      PromptManager.setPrompt('note', notePrompt || null)
+    ]);
+
+    alert('Prompts saved successfully!');
+    this.closePromptsModal();
+  }
+
+  async resetChecklistPrompt() {
+    const defaultPrompt = PromptManager.getDefault('checklist');
+    this.checklistPromptTextarea.value = defaultPrompt;
+    await PromptManager.resetToDefault('checklist');
+  }
+
+  async resetNotePrompt() {
+    const defaultPrompt = PromptManager.getDefault('note');
+    this.notePromptTextarea.value = defaultPrompt;
+    await PromptManager.resetToDefault('note');
   }
 
   handleCanvasMouseDown(e) {
@@ -1146,6 +1253,7 @@ class CanvasApp {
       <div class="item-header">
         <input type="text" class="item-title" placeholder="Note title..." value="${this.escapeHtml(note.title)}">
         <div class="item-actions">
+          <button class="generate-btn" data-action="expand-note" title="Expand with AI">✨</button>
           <button class="copy-btn" data-action="copy" title="Copy to clipboard">📋</button>
           <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
         </div>
@@ -1322,6 +1430,56 @@ class CanvasApp {
     } finally {
       generateBtn.textContent = originalText;
       generateBtn.disabled = false;
+    }
+  }
+
+  async expandNoteContent(noteId) {
+    const note = Store.getItem(noteId);
+    if (!note) return;
+
+    const [apiKey, provider] = await Promise.all([
+      Store.getApiKey(),
+      Store.getAiProvider()
+    ]);
+
+    if (!apiKey) {
+      alert('Please set your API key in Settings (gear icon) first.');
+      return;
+    }
+
+    if (!note.title || note.title.trim() === '') {
+      alert('Please enter a note title first.');
+      return;
+    }
+
+    // Show loading state
+    const element = this.canvasSurface.querySelector(`[data-item-id="${noteId}"]`);
+    const expandBtn = element.querySelector('[data-action="expand-note"]');
+    const originalText = expandBtn.textContent;
+    expandBtn.textContent = '⏳';
+    expandBtn.disabled = true;
+
+    try {
+      const content = await AIService.expandNote(note.title, note.content, apiKey, provider);
+
+      // Save state before updating
+      this.pushHistory();
+
+      // Update note content
+      Store.updateItem(noteId, { content: content });
+
+      // Update textarea
+      const textarea = element.querySelector('.note-content');
+      if (textarea) {
+        textarea.value = content;
+      }
+
+    } catch (err) {
+      console.error('[SpawnCanvas] AI expansion error:', err);
+      alert('AI expansion failed: ' + err.message);
+    } finally {
+      expandBtn.textContent = originalText;
+      expandBtn.disabled = false;
     }
   }
 
