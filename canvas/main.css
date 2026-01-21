@@ -787,3 +787,70 @@
   background: var(--item-border);
   margin: 4px 0;
 }
+
+/* ============================================
+   IMAGE ITEMS
+   ============================================ */
+.canvas-item.image {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.canvas-item.image:hover,
+.canvas-item.image.selected {
+  border-color: var(--accent);
+}
+
+.canvas-item.image .image-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 10;
+  background: linear-gradient(135deg, transparent 0%, rgba(0,0,0,0.5) 100%);
+  border-radius: 0 4px 0 8px;
+}
+
+.canvas-item.image:hover .image-header {
+  opacity: 1;
+}
+
+.canvas-item.image .image-header .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.canvas-item.image .image-header button {
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color var(--transition-fast);
+}
+
+.canvas-item.image .image-header button:hover {
+  background: white;
+}
+
+.canvas-item.image .image-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--canvas-bg);
+}
+
+.canvas-item.image .image-content img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}

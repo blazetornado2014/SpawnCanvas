@@ -226,7 +226,7 @@ class CanvasApp {
     };
     document.addEventListener('keydown', this._documentKeyHandler, true); // Use capture phase
 
-    // Capture Ctrl+V for paste when nothing is focused
+    // Capture paste when nothing is focused (images or text)
     this._pasteHandler = async (e) => {
       if (!this.wrapper.isConnected) return;
 
@@ -243,6 +243,21 @@ class CanvasApp {
         e.preventDefault();
         e.stopPropagation();
 
+        // Check for images first
+        const clipboardItems = e.clipboardData?.items;
+        if (clipboardItems) {
+          for (const item of clipboardItems) {
+            if (item.type.startsWith('image/')) {
+              const blob = item.getAsFile();
+              if (blob) {
+                this.createImageFromPaste(blob);
+                return;
+              }
+            }
+          }
+        }
+
+        // Fall back to text paste
         try {
           const text = await navigator.clipboard.readText();
           if (text && text.trim()) {
@@ -429,6 +444,9 @@ class CanvasApp {
           break;
         case 'expand-note':
           this.openAiInputModal(itemId, 'note');
+          break;
+        case 'copy-image':
+          this.copyImageToClipboard(itemId);
           break;
       }
     });
@@ -738,6 +756,8 @@ class CanvasApp {
         this.renderChecklist(item);
       } else if (item.type === 'container') {
         this.renderContainer(item);
+      } else if (item.type === 'image') {
+        this.renderImage(item);
       }
     });
   }
@@ -1400,6 +1420,51 @@ class CanvasApp {
     }
   }
 
+  /**
+   * Create an image item from pasted image (when nothing is focused)
+   */
+  createImageFromPaste(blob) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64Data = e.target.result;
+
+      // Get image dimensions
+      const img = new Image();
+      img.onload = () => {
+        // Scale down if too large (max 800px width/height)
+        let width = img.width;
+        let height = img.height;
+        const maxSize = 800;
+
+        if (width > maxSize || height > maxSize) {
+          const ratio = Math.min(maxSize / width, maxSize / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+
+        // Ensure minimum size
+        width = Math.max(100, width);
+        height = Math.max(100, height);
+
+        this.pushHistory();
+        const position = this.getNewItemPosition();
+
+        const imageItem = Store.createItem('image', {
+          imageData: base64Data,
+          position,
+          size: { width, height }
+        });
+
+        if (imageItem) {
+          this.renderImage(imageItem);
+          this.selectItem(imageItem.id);
+        }
+      };
+      img.src = base64Data;
+    };
+    reader.readAsDataURL(blob);
+  }
+
   renderNote(note) {
     const element = document.createElement('div');
     element.className = 'canvas-item note';
@@ -1420,6 +1485,33 @@ class CanvasApp {
       </div>
       <div class="item-content">
         <textarea class="note-content" placeholder="Write your note...">${this.escapeHtml(note.content)}</textarea>
+      </div>
+      <div class="resize-handle corner se"></div>
+      <div class="resize-handle edge e"></div>
+      <div class="resize-handle edge s"></div>
+    `;
+
+    this.canvasSurface.appendChild(element);
+  }
+
+  renderImage(image) {
+    const element = document.createElement('div');
+    element.className = 'canvas-item image';
+    element.dataset.itemId = image.id;
+    element.style.left = `${image.position.x}px`;
+    element.style.top = `${image.position.y}px`;
+    element.style.width = `${image.size.width}px`;
+    element.style.height = `${image.size.height}px`;
+
+    element.innerHTML = `
+      <div class="item-header image-header">
+        <div class="item-actions">
+          <button class="copy-btn" data-action="copy-image" title="Copy image">📋</button>
+          <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
+        </div>
+      </div>
+      <div class="image-content">
+        <img src="${image.imageData}" alt="Pasted image" draggable="false">
       </div>
       <div class="resize-handle corner se"></div>
       <div class="resize-handle edge e"></div>
@@ -2004,6 +2096,24 @@ class CanvasApp {
       console.log('[SpawnCanvas] Copied to clipboard');
     } catch (err) {
       console.error('[SpawnCanvas] Failed to copy:', err);
+    }
+  }
+
+  async copyImageToClipboard(id) {
+    const item = Store.getItem(id);
+    if (!item || !item.imageData) return;
+
+    try {
+      // Convert base64 data URL to blob
+      const response = await fetch(item.imageData);
+      const blob = await response.blob();
+
+      await navigator.clipboard.write([
+        new ClipboardItem({ [blob.type]: blob })
+      ]);
+      console.log('[SpawnCanvas] Image copied to clipboard');
+    } catch (err) {
+      console.error('[SpawnCanvas] Failed to copy image:', err);
     }
   }
 
