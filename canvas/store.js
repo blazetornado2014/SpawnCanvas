@@ -391,6 +391,8 @@ const Store = (function() {
     } else if (type === 'container') {
       item.color = data.color || 'blue';
       item.children = data.children || [];
+    } else if (type === 'image') {
+      item.imageData = data.imageData || '';
     }
 
     currentWorkspace.items.push(item);

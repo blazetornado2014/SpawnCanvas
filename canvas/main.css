@@ -63,6 +63,8 @@
   --z-canvas: 1;
   --z-items: 10;
   --z-selected: 100;
+  --z-images: 200;
+  --z-images-selected: 300;
   --z-dragging: 500;
   --z-toolbar: 1000;
   --z-modal: 2000;
@@ -556,6 +558,7 @@
   opacity: 0;
   transition: opacity var(--transition-fast);
   z-index: 10;
+  pointer-events: auto;
 }
 
 .canvas-item.selected .resize-handle {
@@ -786,4 +789,78 @@
   height: 1px;
   background: var(--item-border);
   margin: 4px 0;
+}
+
+/* ============================================
+   IMAGE ITEMS
+   ============================================ */
+.canvas-item.image {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 50px;
+  min-height: 50px;
+  z-index: var(--z-images);
+}
+
+.canvas-item.image.selected {
+  z-index: var(--z-images-selected);
+}
+
+.canvas-item.image:hover,
+.canvas-item.image.selected {
+  border-color: var(--accent);
+}
+
+.canvas-item.image .image-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 10;
+  background: linear-gradient(135deg, transparent 0%, rgba(0,0,0,0.5) 100%);
+  border-radius: 0 4px 0 8px;
+  pointer-events: auto;
+}
+
+.canvas-item.image:hover .image-header {
+  opacity: 1;
+}
+
+.canvas-item.image .image-header .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.canvas-item.image .image-header button {
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color var(--transition-fast);
+}
+
+.canvas-item.image .image-header button:hover {
+  background: white;
+}
+
+.canvas-item.image .image-content {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.canvas-item.image .image-content img {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
