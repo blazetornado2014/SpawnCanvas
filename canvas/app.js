@@ -226,6 +226,35 @@ class CanvasApp {
     };
     document.addEventListener('keydown', this._documentKeyHandler, true); // Use capture phase
 
+    // Capture Ctrl+V for paste when nothing is focused
+    this._pasteHandler = async (e) => {
+      if (!this.wrapper.isConnected) return;
+
+      // Check if any editable element is focused (inside shadow DOM or document)
+      const activeElement = this.shadowRoot.activeElement || document.activeElement;
+      const isEditing = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.isContentEditable
+      );
+
+      // Only intercept if nothing is being edited
+      if (!isEditing) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text && text.trim()) {
+            this.createNoteFromPaste(text.trim());
+          }
+        } catch (err) {
+          console.error('[SpawnCanvas] Failed to read clipboard:', err);
+        }
+      }
+    };
+    document.addEventListener('paste', this._pasteHandler, true);
+
     // Track Space key for pan mode
     this._spaceKeyDownHandler = (e) => {
       if (!this.wrapper.isConnected) return;
@@ -1342,6 +1371,32 @@ class CanvasApp {
         const titleInput = this.canvasSurface.querySelector(`[data-item-id="${note.id}"] .item-title`);
         if (titleInput) titleInput.focus();
       }, 0);
+    }
+  }
+
+  /**
+   * Create a note from pasted content (when nothing is focused)
+   */
+  createNoteFromPaste(content) {
+    // Save state before adding
+    this.pushHistory();
+
+    const position = this.getNewItemPosition();
+
+    // Calculate height based on content length (rough estimate)
+    const lineCount = content.split('\n').length;
+    const estimatedHeight = Math.max(180, Math.min(400, 80 + lineCount * 20));
+
+    const note = Store.createItem('note', {
+      title: 'Copied content',
+      content: content,
+      position,
+      size: { width: 300, height: estimatedHeight }
+    });
+
+    if (note) {
+      this.renderNote(note);
+      this.selectItem(note.id);
     }
   }
 
