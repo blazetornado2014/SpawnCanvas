@@ -2022,8 +2022,15 @@ class CanvasApp {
     const isRight = handle.classList.contains('e') || handle.classList.contains('se');
     const isBottom = handle.classList.contains('s') || handle.classList.contains('se');
 
-    const minWidth = item.type === 'container' ? 300 : 200;
-    const minHeight = item.type === 'container' ? 200 : 100;
+    let minWidth = 200;
+    let minHeight = 100;
+    if (item.type === 'container') {
+      minWidth = 300;
+      minHeight = 200;
+    } else if (item.type === 'image') {
+      minWidth = 50;
+      minHeight = 50;
+    }
 
     const onMouseMove = (moveEvent) => {
       const deltaX = moveEvent.clientX - startX;
