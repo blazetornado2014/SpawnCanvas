@@ -11,6 +11,10 @@ const Store = (function() {
   const WORKSPACES_LIST_KEY = STORAGE_PREFIX + 'workspaces_list';
   const CURRENT_WORKSPACE_KEY = STORAGE_PREFIX + 'current_workspace';
   const WORKSPACE_PREFIX = STORAGE_PREFIX + 'workspace_';
+  const API_KEY_KEY = STORAGE_PREFIX + 'api_key';
+  const AI_PROVIDER_KEY = STORAGE_PREFIX + 'ai_provider';
+  const CHECKLIST_PROMPT_KEY = STORAGE_PREFIX + 'checklist_prompt';
+  const NOTE_PROMPT_KEY = STORAGE_PREFIX + 'note_prompt';
 
   // Default workspace
   const DEFAULT_WORKSPACE_ID = 'default';
@@ -694,6 +698,146 @@ const Store = (function() {
   }
 
   // ============================================
+  // API KEY MANAGEMENT
+  // ============================================
+
+  /**
+   * Get the stored API key
+   * @returns {Promise<string|null>} API key or null
+   */
+  async function getApiKey() {
+    if (!isStorageAvailable()) return null;
+    try {
+      const result = await chrome.storage.local.get(API_KEY_KEY);
+      return result[API_KEY_KEY] || null;
+    } catch (err) {
+      console.error('[Store] Error getting API key:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Set the API key
+   * @param {string} apiKey - The API key to store
+   * @returns {Promise<boolean>} Success
+   */
+  async function setApiKey(apiKey) {
+    if (!isStorageAvailable()) return false;
+    try {
+      await chrome.storage.local.set({ [API_KEY_KEY]: apiKey });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting API key:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Get the stored AI provider
+   * @returns {Promise<string>} Provider name ('claude', 'openai', 'gemini')
+   */
+  async function getAiProvider() {
+    if (!isStorageAvailable()) return 'claude';
+    try {
+      const result = await chrome.storage.local.get(AI_PROVIDER_KEY);
+      return result[AI_PROVIDER_KEY] || 'claude';
+    } catch (err) {
+      console.error('[Store] Error getting AI provider:', err);
+      return 'claude';
+    }
+  }
+
+  /**
+   * Set the AI provider
+   * @param {string} provider - Provider name ('claude', 'openai', 'gemini')
+   * @returns {Promise<boolean>} Success
+   */
+  async function setAiProvider(provider) {
+    if (!isStorageAvailable()) return false;
+    try {
+      await chrome.storage.local.set({ [AI_PROVIDER_KEY]: provider });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting AI provider:', err);
+      return false;
+    }
+  }
+
+  // ============================================
+  // PROMPT MANAGEMENT
+  // ============================================
+
+  /**
+   * Get the stored checklist prompt
+   * @returns {Promise<string|null>} Checklist prompt or null
+   */
+  async function getChecklistPrompt() {
+    if (!isStorageAvailable()) return null;
+    try {
+      const result = await chrome.storage.local.get(CHECKLIST_PROMPT_KEY);
+      return result[CHECKLIST_PROMPT_KEY] || null;
+    } catch (err) {
+      console.error('[Store] Error getting checklist prompt:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Set the checklist prompt
+   * @param {string|null} prompt - The prompt to store (null to clear)
+   * @returns {Promise<boolean>} Success
+   */
+  async function setChecklistPrompt(prompt) {
+    if (!isStorageAvailable()) return false;
+    try {
+      if (prompt === null) {
+        await chrome.storage.local.remove(CHECKLIST_PROMPT_KEY);
+      } else {
+        await chrome.storage.local.set({ [CHECKLIST_PROMPT_KEY]: prompt });
+      }
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting checklist prompt:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Get the stored note prompt
+   * @returns {Promise<string|null>} Note prompt or null
+   */
+  async function getNotePrompt() {
+    if (!isStorageAvailable()) return null;
+    try {
+      const result = await chrome.storage.local.get(NOTE_PROMPT_KEY);
+      return result[NOTE_PROMPT_KEY] || null;
+    } catch (err) {
+      console.error('[Store] Error getting note prompt:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Set the note prompt
+   * @param {string|null} prompt - The prompt to store (null to clear)
+   * @returns {Promise<boolean>} Success
+   */
+  async function setNotePrompt(prompt) {
+    if (!isStorageAvailable()) return false;
+    try {
+      if (prompt === null) {
+        await chrome.storage.local.remove(NOTE_PROMPT_KEY);
+      } else {
+        await chrome.storage.local.set({ [NOTE_PROMPT_KEY]: prompt });
+      }
+      return true;
+    } catch (err) {
+      console.error('[Store] Error setting note prompt:', err);
+      return false;
+    }
+  }
+
+  // ============================================
   // PERSISTENCE
   // ============================================
 
@@ -803,7 +947,19 @@ const Store = (function() {
     exportWorkspace,
     importWorkspace,
     exportAllWorkspaces,
-    importAllWorkspaces
+    importAllWorkspaces,
+
+    // API Key & Provider
+    getApiKey,
+    setApiKey,
+    getAiProvider,
+    setAiProvider,
+
+    // Prompts
+    getChecklistPrompt,
+    setChecklistPrompt,
+    getNotePrompt,
+    setNotePrompt
   };
 
 })();

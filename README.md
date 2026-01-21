@@ -93,6 +93,14 @@ Access export options from the Settings menu. Import options are in the workspac
 - Multi-select with Shift+Click.
 - Delete multiple selected items at once.
 
+### AI Generation
+- Click the ✨ button on a checklist to auto-generate items based on the title.
+- Supports multiple AI providers:
+  - **Claude** (Anthropic) - [console.anthropic.com](https://console.anthropic.com)
+  - **OpenAI** (GPT-4o) - [platform.openai.com](https://platform.openai.com)
+  - **Gemini** (Google) - [aistudio.google.com](https://aistudio.google.com)
+- Set your provider and API key in Settings (gear icon).
+
 ## Tips
 
 - **Copy to Clipboard**: Hover over a note/checklist and click the clipboard icon to copy its content as text.
