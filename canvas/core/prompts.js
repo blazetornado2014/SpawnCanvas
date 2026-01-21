@@ -11,20 +11,32 @@ const PromptManager = (function() {
     checklist: `Generate a checklist based on this request: "{prompt}"
 
 Rules:
-- Return ONLY the checklist items, one per line
+- First line must be a short title (3-5 words) prefixed with "TITLE:"
+- Then list the checklist items, one per line
 - Each item should be a clear, actionable task
 - Keep items concise (under 10 words each)
 - Generate 5-10 relevant items
 - Do not include numbers, bullets, or checkboxes
-- Do not include any explanation or preamble`,
+- Do not include any explanation
+
+Example format:
+TITLE: Weekly Meal Planning
+Buy groceries for the week
+Prep vegetables on Sunday
+Cook batch meals`,
 
     note: `Write content based on this request: "{prompt}"
 
 Rules:
+- First line must be a short title (3-5 words) prefixed with "TITLE:"
+- Then write the note content
 - Keep it concise and useful
 - Use plain text, no markdown
 - 2-4 paragraphs maximum
-- Be informative and relevant to the request`
+
+Example format:
+TITLE: Project Overview
+The content starts here...`
   };
 
   /**

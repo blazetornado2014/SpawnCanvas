@@ -1499,13 +1499,22 @@ class CanvasApp {
     generateBtn.disabled = true;
 
     try {
-      const items = await AIService.generateChecklistItems(userPrompt, apiKey, provider);
+      const result = await AIService.generateChecklistItems(userPrompt, apiKey, provider);
 
       // Save state before adding items
       this.pushHistory();
 
+      // Update title if empty and AI generated one
+      if (result.title && (!checklist.title || checklist.title.trim() === '')) {
+        checklist.title = result.title;
+        const titleInput = element.querySelector('.item-title');
+        if (titleInput) {
+          titleInput.value = result.title;
+        }
+      }
+
       // Add generated items
-      for (const text of items) {
+      for (const text of result.items) {
         const newItem = {
           id: `ci_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
           text: text,
@@ -1515,7 +1524,7 @@ class CanvasApp {
         checklist.items.push(newItem);
       }
 
-      Store.updateItem(checklistId, { items: checklist.items });
+      Store.updateItem(checklistId, { title: checklist.title, items: checklist.items });
 
       // Re-render checklist items
       const ul = element.querySelector('.checklist-items');
@@ -1555,18 +1564,27 @@ class CanvasApp {
     expandBtn.disabled = true;
 
     try {
-      const content = await AIService.expandNote(userPrompt, note.content, apiKey, provider);
+      const result = await AIService.expandNote(userPrompt, note.content, apiKey, provider);
 
       // Save state before updating
       this.pushHistory();
 
+      // Update title if empty and AI generated one
+      if (result.title && (!note.title || note.title.trim() === '')) {
+        note.title = result.title;
+        const titleInput = element.querySelector('.item-title');
+        if (titleInput) {
+          titleInput.value = result.title;
+        }
+      }
+
       // Update note content
-      Store.updateItem(noteId, { content: content });
+      Store.updateItem(noteId, { title: note.title, content: result.content });
 
       // Update textarea
       const textarea = element.querySelector('.note-content');
       if (textarea) {
-        textarea.value = content;
+        textarea.value = result.content;
       }
 
     } catch (err) {

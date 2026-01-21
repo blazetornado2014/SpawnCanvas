@@ -129,20 +129,47 @@ const AIService = (function () {
   }
 
   /**
-   * Generate checklist items from a title/prompt
-   * @param {string} title - The checklist title or prompt
+   * Parse title from AI response (expects "TITLE: ..." on first line)
+   * @param {string} content - Raw AI response
+   * @returns {{ title: string|null, content: string }} Parsed title and remaining content
+   */
+  function parseTitle(content) {
+    const lines = content.split('\n');
+    let title = null;
+    let startIndex = 0;
+
+    // Check if first non-empty line starts with "TITLE:"
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.length === 0) continue;
+
+      if (line.toUpperCase().startsWith('TITLE:')) {
+        title = line.substring(6).trim();
+        startIndex = i + 1;
+      }
+      break;
+    }
+
+    // Return remaining content without the title line
+    const remainingContent = lines.slice(startIndex).join('\n').trim();
+    return { title, content: remainingContent };
+  }
+
+  /**
+   * Generate checklist items from a prompt
+   * @param {string} userPrompt - The user's prompt
    * @param {string} apiKey - API key
    * @param {string} provider - Provider name ('claude', 'openai', 'gemini')
    * @param {string} customPrompt - Optional custom prompt template
-   * @returns {Promise<string[]>} Array of checklist item texts
+   * @returns {Promise<{title: string|null, items: string[]}>} Generated title and items
    */
-  async function generateChecklistItems(title, apiKey, provider = 'claude', customPrompt = null) {
+  async function generateChecklistItems(userPrompt, apiKey, provider = 'claude', customPrompt = null) {
     if (!apiKey) {
       throw new Error('API key not configured');
     }
 
-    if (!title || title.trim() === '') {
-      throw new Error('Please enter a title first');
+    if (!userPrompt || userPrompt.trim() === '') {
+      throw new Error('Please enter a prompt');
     }
 
     // Get the prompt template - use custom if provided, otherwise fetch from PromptManager
@@ -156,22 +183,26 @@ const AIService = (function () {
       promptTemplate = `Generate a checklist based on this request: "{prompt}"
 
 Rules:
-- Return ONLY the checklist items, one per line
+- First line must be a short title (3-5 words) prefixed with "TITLE:"
+- Then list the checklist items, one per line
 - Each item should be a clear, actionable task
 - Keep items concise (under 10 words each)
 - Generate 5-10 relevant items
 - Do not include numbers, bullets, or checkboxes
-- Do not include any explanation or preamble`;
+- Do not include any explanation`;
     }
 
     // Build the prompt with placeholder replaced
     const prompt = typeof PromptManager !== 'undefined'
-      ? PromptManager.buildPrompt(promptTemplate, title)
-      : promptTemplate.replace(/{prompt}/g, title);
+      ? PromptManager.buildPrompt(promptTemplate, userPrompt)
+      : promptTemplate.replace(/{prompt}/g, userPrompt);
 
-    const content = await callProvider(prompt, apiKey, provider);
+    const rawContent = await callProvider(prompt, apiKey, provider);
 
-    // Parse the response into individual items
+    // Parse title and content
+    const { title, content } = parseTitle(rawContent);
+
+    // Parse the remaining content into individual items
     const items = content
       .split('\n')
       .map(line => line.trim())
@@ -181,25 +212,25 @@ Rules:
       throw new Error('No items generated');
     }
 
-    return items;
+    return { title, items };
   }
 
   /**
    * Expand a note with AI-generated content
-   * @param {string} title - The note title
+   * @param {string} userPrompt - The user's prompt
    * @param {string} existingContent - Any existing content
    * @param {string} apiKey - API key
    * @param {string} provider - Provider name
    * @param {string} customPrompt - Optional custom prompt template
-   * @returns {Promise<string>} Generated content
+   * @returns {Promise<{title: string|null, content: string}>} Generated title and content
    */
-  async function expandNote(title, existingContent, apiKey, provider = 'claude', customPrompt = null) {
+  async function expandNote(userPrompt, existingContent, apiKey, provider = 'claude', customPrompt = null) {
     if (!apiKey) {
       throw new Error('API key not configured');
     }
 
-    if (!title || title.trim() === '') {
-      throw new Error('Please enter a title first');
+    if (!userPrompt || userPrompt.trim() === '') {
+      throw new Error('Please enter a prompt');
     }
 
     // Get the prompt template - use custom if provided, otherwise fetch from PromptManager
@@ -213,23 +244,29 @@ Rules:
       promptTemplate = `Write content based on this request: "{prompt}"
 
 Rules:
+- First line must be a short title (3-5 words) prefixed with "TITLE:"
+- Then write the note content
 - Keep it concise and useful
 - Use plain text, no markdown
-- 2-4 paragraphs maximum
-- Be informative and relevant to the request`;
+- 2-4 paragraphs maximum`;
     }
 
     // Build the prompt with placeholder replaced
     let prompt = typeof PromptManager !== 'undefined'
-      ? PromptManager.buildPrompt(promptTemplate, title)
-      : promptTemplate.replace(/{prompt}/g, title);
+      ? PromptManager.buildPrompt(promptTemplate, userPrompt)
+      : promptTemplate.replace(/{prompt}/g, userPrompt);
 
     // Append existing content if available
     if (existingContent && existingContent.trim()) {
       prompt += `\n\nExisting content to expand on:\n${existingContent}`;
     }
 
-    return callProvider(prompt, apiKey, provider);
+    const rawContent = await callProvider(prompt, apiKey, provider);
+
+    // Parse title and content
+    const { title, content } = parseTitle(rawContent);
+
+    return { title, content };
   }
 
   /**
