@@ -1504,12 +1504,6 @@ class CanvasApp {
     element.style.height = `${image.size.height}px`;
 
     element.innerHTML = `
-      <div class="item-header image-header">
-        <div class="item-actions">
-          <button class="copy-btn" data-action="copy-image" title="Copy image">📋</button>
-          <button class="delete-btn" data-action="delete" title="Delete">🗑</button>
-        </div>
-      </div>
       <div class="image-content">
         <img src="${image.imageData}" alt="Pasted image" draggable="false">
       </div>
