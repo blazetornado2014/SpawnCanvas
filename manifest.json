@@ -32,6 +32,16 @@
         "content/overlay-manager.js"
       ],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://spawn.co/play/*",
+        "https://www.spawn.co/play/*"
+      ],
+      "js": [
+        "content/spawn-integrator.js"
+      ],
+      "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [

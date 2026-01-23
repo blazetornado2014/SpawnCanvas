@@ -15,6 +15,7 @@ const Store = (function () {
   const AI_PROVIDER_KEY = STORAGE_PREFIX + 'ai_provider';
   const CHECKLIST_PROMPT_KEY = STORAGE_PREFIX + 'checklist_prompt';
   const NOTE_PROMPT_KEY = STORAGE_PREFIX + 'note_prompt';
+  const MEMORIES_KEY = STORAGE_PREFIX + 'memories';
 
   // Default workspace
   const DEFAULT_WORKSPACE_ID = 'default';
@@ -840,6 +841,124 @@ const Store = (function () {
   }
 
   // ============================================
+  // MEMORY STORAGE (Global Project Memories)
+  // ============================================
+
+  /**
+   * Get all memory projects
+   * @returns {Promise<object>} Object with projects keyed by projectId
+   */
+  async function getMemories() {
+    if (!isStorageAvailable()) return { projects: {} };
+    try {
+      const result = await chrome.storage.local.get(MEMORIES_KEY);
+      return result[MEMORIES_KEY] || { projects: {} };
+    } catch (err) {
+      console.error('[Store] Error getting memories:', err);
+      return { projects: {} };
+    }
+  }
+
+  /**
+   * Get a single project's memory
+   * @param {string} projectId - Project ID
+   * @returns {Promise<object|null>} Project memory or null
+   */
+  async function getProjectMemory(projectId) {
+    const memories = await getMemories();
+    return memories.projects[projectId] || null;
+  }
+
+  /**
+   * Save a memory message to a project
+   * @param {string} projectId - Project ID (extracted from URL slug)
+   * @param {object} message - Message object with prompt, response, timestamps
+   * @returns {Promise<boolean>} Success
+   */
+  async function saveMemoryMessage(projectId, message) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+
+      // Create project entry if it doesn't exist
+      if (!memories.projects[projectId]) {
+        memories.projects[projectId] = {
+          id: projectId,
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+      }
+
+      // Add message with unique ID
+      const messageWithId = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        ...message
+      };
+
+      memories.projects[projectId].messages.push(messageWithId);
+      memories.projects[projectId].updatedAt = Date.now();
+
+      await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+      emit('memory:saved', { projectId, message: messageWithId });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error saving memory message:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a project's memory
+   * @param {string} projectId - Project ID to delete
+   * @returns {Promise<boolean>} Success
+   */
+  async function deleteProjectMemory(projectId) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+      if (memories.projects[projectId]) {
+        delete memories.projects[projectId];
+        await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+        emit('memory:deleted', { projectId });
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[Store] Error deleting project memory:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a specific message from a project's memory
+   * @param {string} projectId - Project ID
+   * @param {string} messageId - Message ID to delete
+   * @returns {Promise<boolean>} Success
+   */
+  async function deleteMemoryMessage(projectId, messageId) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+      const project = memories.projects[projectId];
+      if (!project) return false;
+
+      const index = project.messages.findIndex(m => m.id === messageId);
+      if (index === -1) return false;
+
+      project.messages.splice(index, 1);
+      project.updatedAt = Date.now();
+
+      await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+      emit('memory:messageDeleted', { projectId, messageId });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error deleting memory message:', err);
+      return false;
+    }
+  }
+
+  // ============================================
   // PERSISTENCE
   // ============================================
 
@@ -961,7 +1080,14 @@ const Store = (function () {
     getChecklistPrompt,
     setChecklistPrompt,
     getNotePrompt,
-    setNotePrompt
+    setNotePrompt,
+
+    // Memory Storage
+    getMemories,
+    getProjectMemory,
+    saveMemoryMessage,
+    deleteProjectMemory,
+    deleteMemoryMessage
   };
 
 })();
