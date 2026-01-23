@@ -20,15 +20,29 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["canvas/core/history.js", "canvas/store.js", "canvas/core/prompts.js", "canvas/core/ai-service.js", "canvas/app.js", "content/overlay-manager.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "canvas/core/history.js",
+        "canvas/store.js",
+        "canvas/core/prompts.js",
+        "canvas/core/ai-service.js",
+        "canvas/app.js",
+        "content/overlay-manager.js"
+      ],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*", "canvas/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "assets/*",
+        "canvas/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }

@@ -3,7 +3,7 @@
  * State management with Pub/Sub pattern and chrome.storage.local persistence.
  */
 
-const Store = (function() {
+const Store = (function () {
   'use strict';
 
   // Storage key prefixes
@@ -137,14 +137,14 @@ const Store = (function() {
   async function getWorkspaces() {
     const ids = await getWorkspaceList();
     const workspaces = [];
-    
+
     for (const id of ids) {
       const workspace = await loadWorkspaceData(id);
       if (workspace) {
         workspaces.push({ id: workspace.id, name: workspace.name });
       }
     }
-    
+
     return workspaces;
   }
 
@@ -217,17 +217,17 @@ const Store = (function() {
   async function createWorkspace(name) {
     const id = generateWorkspaceId(name);
     const workspace = createWorkspaceObject(id, name);
-    
+
     // Save the workspace
     await saveWorkspaceData(workspace);
-    
+
     // Add to workspace list
     const list = await getWorkspaceList();
     if (!list.includes(id)) {
       list.push(id);
       await chrome.storage.local.set({ [WORKSPACES_LIST_KEY]: list });
     }
-    
+
     emit('workspace:created', workspace);
     return workspace;
   }
@@ -296,16 +296,16 @@ const Store = (function() {
     if (currentWorkspace) {
       await saveNow();
     }
-    
+
     // Load the target workspace
     let workspace = await loadWorkspaceData(id);
-    
+
     // If workspace doesn't exist (e.g., default on first run), create it
     if (!workspace) {
       if (id === DEFAULT_WORKSPACE_ID) {
         workspace = createWorkspaceObject(DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME);
         await saveWorkspaceData(workspace);
-        
+
         // Ensure it's in the list
         const list = await getWorkspaceList();
         if (!list.includes(DEFAULT_WORKSPACE_ID)) {
@@ -317,12 +317,12 @@ const Store = (function() {
         return false;
       }
     }
-    
+
     currentWorkspace = workspace;
-    
+
     // Save current workspace ID
     await chrome.storage.local.set({ [CURRENT_WORKSPACE_KEY]: id });
-    
+
     emit('workspace:switched', currentWorkspace);
     return true;
   }
@@ -417,7 +417,7 @@ const Store = (function() {
     if (index === -1) return null;
 
     const item = currentWorkspace.items[index];
-    
+
     // Apply changes
     Object.assign(item, changes, { updatedAt: Date.now() });
     currentWorkspace.updatedAt = Date.now();
@@ -478,11 +478,11 @@ const Store = (function() {
    */
   function updateViewport(x, y) {
     if (!currentWorkspace) return;
-    
+
     currentWorkspace.viewportX = x;
     currentWorkspace.viewportY = y;
     currentWorkspace.updatedAt = Date.now();
-    
+
     scheduleSave();
   }
 
@@ -864,9 +864,9 @@ const Store = (function() {
       clearTimeout(saveTimeout);
       saveTimeout = null;
     }
-    
+
     if (!currentWorkspace) return;
-    
+
     try {
       await saveWorkspaceData(currentWorkspace);
       emit('workspace:saved', currentWorkspace);
@@ -887,10 +887,10 @@ const Store = (function() {
 
     // Get current workspace ID
     const currentId = await getCurrentWorkspaceId();
-    
+
     // Switch to it (will create default if needed)
     await switchWorkspace(currentId);
-    
+
     // Set up beforeunload to save on page close
     window.addEventListener('beforeunload', () => {
       // Use synchronous approach for beforeunload
@@ -904,7 +904,7 @@ const Store = (function() {
     isInitialized = true;
     emit('store:initialized', currentWorkspace);
     console.log('[Store] Initialized with workspace:', currentWorkspace?.name);
-    
+
     return currentWorkspace;
   }
 

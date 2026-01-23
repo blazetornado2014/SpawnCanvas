@@ -395,8 +395,8 @@ class CanvasApp {
 
       // Don't start drag if clicking on input/textarea or buttons
       if (e.target.tagName === 'INPUT' ||
-          e.target.tagName === 'TEXTAREA' ||
-          e.target.tagName === 'BUTTON') {
+        e.target.tagName === 'TEXTAREA' ||
+        e.target.tagName === 'BUTTON') {
         return;
       }
 

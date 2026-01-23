@@ -16,34 +16,33 @@
     -   Target: `textarea[aria-label="What do you want to play?"]`
     -   Action: On `Enter` (without Shift), capture value -> `Memory.draftPrompt`.
 2.  **Output Observer**:
-    -   Target: The container element wrapping the chat history (Need to identify this in Implementation).
+    -   Target: `div.scrollbar-simple.flex.w-full.flex-col.gap-2.overflow-y-auto.scroll-smooth` (The chat history container).
     -   Action: When new text node appears -> `Memory.captureResponse`.
 
-## 3. Shared Memory Store
--   **Structure**:
-    ```javascript
-    {
-      "chatHistory": [
-        {
-          "id": "msg_123",
-          "timestamp": 123456789,
-          "role": "user",
-          "content": "Make me a platformer game"
-        },
-        {
-          "id": "msg_124",
-          "timestamp": 123456799,
-          "role": "ai",
-          "content": "Here is the code for the platformer..."
-        }
-      ]
+## 3. Shared Memory Store & Linking
+**Structure**:
+```javascript
+{
+  // Global mapping of context
+  "memories": {
+    "project_123": {
+      "title": "Super Game Project",
+      "chatHistory": [ ... ]
     }
-    ```
+  }
+}
+```
+
+**Workspace Linking Strategy**:
+1.  **Detection**: The Integrator detects the Project ID from the URL (e.g., `spawn.co/play/super-game-123` -> `super-game-123`).
+2.  **Association**:
+    -   Each **Workspace** in `Store` gets a `linkedProjectId` field.
+    -   When you open a workspace while on a Project Page:
+        -   **If linked**: Automatically show memory for that project.
+        -   **If not linked**: Show a "Link to this Project?" button in the Memory Tab.
+        -   **If mismatch**: Show warning "This workspace is linked to Project X, but you are on Project Y."
 
 ## 4. Implementation Steps
-1.  **Identify API Endpoint**: (User to provide Network Audit logs).
-2.  **Create Integrator Script**:
-    -   Inject a "world script" to intercept `window.fetch`.
-    -   Pass data to the content script via `window.postMessage`.
-3.  **App UI**:
-    -   "Memory Tab" displays this chat log as a reference.
+1.  **Integrator**: Extract Project ID from URL. Pass it to App.
+2.  **Store**: Update `Workspace` schema to include `linkedProjectId`.
+3.  **UI**: Logic to compare `currentProject` (from URL) vs `workspace.linkedProject`.
