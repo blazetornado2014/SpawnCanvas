@@ -35,13 +35,13 @@
     },
     {
       "matches": [
-        "https://spawn.co/play/*",
-        "https://www.spawn.co/play/*"
+        "https://spawn.co/*",
+        "https://www.spawn.co/*"
       ],
       "js": [
         "content/spawn-integrator.js"
       ],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
