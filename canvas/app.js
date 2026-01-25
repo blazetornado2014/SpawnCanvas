@@ -23,6 +23,10 @@ class CanvasApp {
     this.selectionStart = { x: 0, y: 0 };
     this.selectionBox = null;
 
+    // Tab state
+    this.activeTab = 'workspace'; // 'workspace' | 'memory'
+    this.selectedProjectId = null;
+
     this.canvasSize = 5000;
     this.gridSize = 20;
 
@@ -94,34 +98,40 @@ class CanvasApp {
     this.wrapper.innerHTML = `
       <div class="toolbar">
         <div class="toolbar-left">
-          <select class="workspace-selector">
-            <option value="default">Default Workspace</option>
-          </select>
-          <div class="settings-dropdown">
-            <button class="settings-btn icon-btn" data-action="toggle-settings" title="Workspace Settings">⚙️</button>
-            <div class="settings-menu">
-              <button class="settings-menu-item" data-action="rename-workspace">✏️ Rename Workspace</button>
-              <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
-              <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
-              <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
-              <div class="settings-menu-divider"></div>
-              <div class="settings-ai">
-                <label>🤖 AI Provider</label>
-                <select class="ai-provider-select">
-                  <option value="claude">Claude (Anthropic)</option>
-                  <option value="openai">OpenAI (GPT-4o)</option>
-                  <option value="gemini">Gemini (Google)</option>
-                </select>
-                <label>🔑 API Key</label>
-                <input type="password" class="api-key-input" placeholder="Enter API key...">
-                <button class="api-key-save" data-action="save-api-key">Save</button>
+          <div class="tab-container">
+            <button class="tab-btn active" data-tab="workspace">Workspace</button>
+            <button class="tab-btn" data-tab="memory">Memory</button>
+          </div>
+          <div class="workspace-controls">
+            <select class="workspace-selector">
+              <option value="default">Default Workspace</option>
+            </select>
+            <div class="settings-dropdown">
+              <button class="settings-btn icon-btn" data-action="toggle-settings" title="Workspace Settings">⚙️</button>
+              <div class="settings-menu">
+                <button class="settings-menu-item" data-action="rename-workspace">✏️ Rename Workspace</button>
+                <button class="settings-menu-item" data-action="delete-workspace">🗑️ Delete Workspace</button>
+                <button class="settings-menu-item" data-action="export-workspace">📤 Export Workspace</button>
+                <button class="settings-menu-item" data-action="export-all">📦 Export All Workspaces</button>
+                <div class="settings-menu-divider"></div>
+                <div class="settings-ai">
+                  <label>🤖 AI Provider</label>
+                  <select class="ai-provider-select">
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="openai">OpenAI (GPT-4o)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                  </select>
+                  <label>🔑 API Key</label>
+                  <input type="password" class="api-key-input" placeholder="Enter API key...">
+                  <button class="api-key-save" data-action="save-api-key">Save</button>
+                </div>
               </div>
             </div>
+            <button class="prompts-btn icon-btn" data-action="toggle-prompts" title="Edit AI Prompts">📝</button>
+            <button class="add-btn" data-action="add-note">+ Note</button>
+            <button class="add-btn" data-action="add-checklist">+ Checklist</button>
+            <button class="add-btn" data-action="add-container">+ Container</button>
           </div>
-          <button class="prompts-btn icon-btn" data-action="toggle-prompts" title="Edit AI Prompts">📝</button>
-          <button class="add-btn" data-action="add-note">+ Note</button>
-          <button class="add-btn" data-action="add-checklist">+ Checklist</button>
-          <button class="add-btn" data-action="add-container">+ Container</button>
         </div>
         <div class="toolbar-right">
           <button class="undo-btn icon-btn" data-action="undo" title="Undo (Ctrl+Z)">↩️</button>
@@ -133,6 +143,27 @@ class CanvasApp {
         <div class="canvas-surface">
           <div class="center-anchor"></div>
           <!-- Canvas items will be rendered here -->
+        </div>
+      </div>
+      <div class="memory-area hidden">
+        <div class="memory-sidebar">
+          <div class="memory-sidebar-header">
+            <h3>Projects</h3>
+          </div>
+          <div class="project-list">
+            <!-- Project items will be rendered here -->
+          </div>
+        </div>
+        <div class="memory-content">
+          <div class="memory-content-header">
+            <h3 class="memory-project-title">Select a project</h3>
+            <button class="delete-project-btn hidden" data-action="delete-project" title="Delete Project">🗑️</button>
+          </div>
+          <div class="chat-history">
+            <div class="chat-empty-state">
+              <p>Select a project from the left panel to view its chat history.</p>
+            </div>
+          </div>
         </div>
       </div>
       <input type="file" class="import-file-input" accept=".json" style="display: none;">
@@ -188,6 +219,7 @@ class CanvasApp {
     this.canvasSurface = this.wrapper.querySelector('.canvas-surface');
     this.toolbar = this.wrapper.querySelector('.toolbar');
     this.workspaceSelector = this.wrapper.querySelector('.workspace-selector');
+    this.workspaceControls = this.wrapper.querySelector('.workspace-controls');
     this.importFileInput = this.wrapper.querySelector('.import-file-input');
     this.settingsDropdown = this.wrapper.querySelector('.settings-dropdown');
     this.apiKeyInput = this.wrapper.querySelector('.api-key-input');
@@ -198,6 +230,14 @@ class CanvasApp {
     this.aiInputModal = this.wrapper.querySelector('.ai-input-modal');
     this.aiInputTextarea = this.wrapper.querySelector('.ai-input-textarea');
     this.aiInputTitle = this.wrapper.querySelector('.ai-input-title');
+
+    // Memory tab elements
+    this.memoryArea = this.wrapper.querySelector('.memory-area');
+    this.projectList = this.wrapper.querySelector('.project-list');
+    this.chatHistory = this.wrapper.querySelector('.chat-history');
+    this.memoryProjectTitle = this.wrapper.querySelector('.memory-project-title');
+    this.deleteProjectBtn = this.wrapper.querySelector('.delete-project-btn');
+    this.tabButtons = this.wrapper.querySelectorAll('.tab-btn');
 
     // State for AI input modal
     this.aiInputTarget = null; // { id: string, type: 'checklist' | 'note' }
@@ -294,6 +334,16 @@ class CanvasApp {
     document.addEventListener('keydown', this._spaceKeyDownHandler);
     document.addEventListener('keyup', this._spaceKeyUpHandler);
 
+    // Tab button clicks
+    this.tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        if (tab) {
+          this.switchTab(tab);
+        }
+      });
+    });
+
     // Toolbar button clicks (delegated)
     this.toolbar.addEventListener('click', (e) => {
       const action = e.target.closest('[data-action]')?.dataset.action;
@@ -302,6 +352,32 @@ class CanvasApp {
         // Close settings menu after clicking a menu item (except toggle itself)
         if (action !== 'toggle-settings' && e.target.closest('.settings-menu')) {
           this.closeSettingsMenu();
+        }
+      }
+    });
+
+    // Memory area click handlers (delegated)
+    this.memoryArea.addEventListener('click', (e) => {
+      // Project item click
+      const projectItem = e.target.closest('.project-item');
+      if (projectItem) {
+        this.selectProject(projectItem.dataset.projectId);
+        return;
+      }
+
+      // Delete project button
+      const deleteBtn = e.target.closest('[data-action="delete-project"]');
+      if (deleteBtn && this.selectedProjectId) {
+        this.deleteSelectedProject();
+        return;
+      }
+
+      // Delete message button
+      const deleteMessageBtn = e.target.closest('[data-action="delete-message"]');
+      if (deleteMessageBtn) {
+        const messageId = deleteMessageBtn.dataset.messageId;
+        if (messageId && this.selectedProjectId) {
+          this.deleteMessage(this.selectedProjectId, messageId);
         }
       }
     });
@@ -395,8 +471,8 @@ class CanvasApp {
 
       // Don't start drag if clicking on input/textarea or buttons
       if (e.target.tagName === 'INPUT' ||
-          e.target.tagName === 'TEXTAREA' ||
-          e.target.tagName === 'BUTTON') {
+        e.target.tagName === 'TEXTAREA' ||
+        e.target.tagName === 'BUTTON') {
         return;
       }
 
@@ -988,6 +1064,181 @@ class CanvasApp {
     this.aiInputModal.classList.remove('open');
     this.aiInputTarget = null;
     this.aiInputTextarea.value = '';
+  }
+
+  // ============================================
+  // TAB SWITCHING
+  // ============================================
+
+  switchTab(tab) {
+    if (this.activeTab === tab) return;
+
+    this.activeTab = tab;
+
+    // Update tab button states
+    this.tabButtons.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+
+    if (tab === 'workspace') {
+      this.canvasArea.classList.remove('hidden');
+      this.memoryArea.classList.add('hidden');
+      this.workspaceControls.classList.remove('hidden');
+    } else if (tab === 'memory') {
+      this.canvasArea.classList.add('hidden');
+      this.memoryArea.classList.remove('hidden');
+      this.workspaceControls.classList.add('hidden');
+      this.loadMemoryView();
+    }
+  }
+
+  async loadMemoryView() {
+    const memories = await Store.getMemories();
+    this.renderProjectList(memories.projects);
+  }
+
+  renderProjectList(projects) {
+    const projectIds = Object.keys(projects);
+
+    if (projectIds.length === 0) {
+      this.projectList.innerHTML = `
+        <div class="project-list-empty">
+          <p>No memories captured yet.</p>
+          <p class="hint">Chat with spawn.co to auto-capture prompts and responses.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Sort projects by updatedAt (most recent first)
+    const sortedProjects = projectIds
+      .map(id => projects[id])
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    this.projectList.innerHTML = sortedProjects.map(project => {
+      const messageCount = project.messages.length;
+      const lastUpdated = this.formatDate(project.updatedAt);
+      const isSelected = this.selectedProjectId === project.id;
+
+      return `
+        <div class="project-item ${isSelected ? 'selected' : ''}" data-project-id="${project.id}">
+          <div class="project-name">${this.escapeHtml(project.id)}</div>
+          <div class="project-meta">
+            <span>${messageCount} message${messageCount !== 1 ? 's' : ''}</span>
+            <span>${lastUpdated}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async selectProject(projectId) {
+    this.selectedProjectId = projectId;
+
+    // Update selected state in list
+    const projectItems = this.projectList.querySelectorAll('.project-item');
+    projectItems.forEach(item => {
+      item.classList.toggle('selected', item.dataset.projectId === projectId);
+    });
+
+    // Update header
+    this.memoryProjectTitle.textContent = projectId;
+    this.deleteProjectBtn.classList.remove('hidden');
+
+    // Load and render chat history
+    const project = await Store.getProjectMemory(projectId);
+    this.renderChatHistory(project);
+  }
+
+  renderChatHistory(project) {
+    if (!project || !project.messages || project.messages.length === 0) {
+      this.chatHistory.innerHTML = `
+        <div class="chat-empty-state">
+          <p>No messages in this project yet.</p>
+        </div>
+      `;
+      return;
+    }
+
+    this.chatHistory.innerHTML = project.messages.map(msg => {
+      const promptTime = msg.promptTimestamp ? this.formatTime(msg.promptTimestamp) : '';
+      const responseTime = msg.responseTimestamp ? this.formatTime(msg.responseTimestamp) : '';
+
+      return `
+        <div class="memory-message" data-message-id="${msg.id}">
+          <div class="message-prompt">
+            <div class="message-header">
+              <span class="message-role">You</span>
+              <span class="message-time">${promptTime}</span>
+              <button class="message-delete-btn" data-action="delete-message" data-message-id="${msg.id}" title="Delete message">×</button>
+            </div>
+            <div class="message-content">${this.escapeHtml(msg.prompt)}</div>
+          </div>
+          ${msg.response ? `
+            <div class="message-response">
+              <div class="message-header">
+                <span class="message-role">AI</span>
+                <span class="message-time">${responseTime}</span>
+              </div>
+              <div class="message-content">${this.escapeHtml(msg.response)}</div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    // Auto-scroll to bottom (latest message)
+    this.chatHistory.scrollTop = this.chatHistory.scrollHeight;
+  }
+
+  async deleteSelectedProject() {
+    if (!this.selectedProjectId) return;
+
+    const confirmed = confirm(`Delete all memories for "${this.selectedProjectId}"?\n\nThis cannot be undone.`);
+    if (!confirmed) return;
+
+    await Store.deleteProjectMemory(this.selectedProjectId);
+
+    // Reset selection and reload
+    this.selectedProjectId = null;
+    this.memoryProjectTitle.textContent = 'Select a project';
+    this.deleteProjectBtn.classList.add('hidden');
+    this.chatHistory.innerHTML = `
+      <div class="chat-empty-state">
+        <p>Select a project from the left panel to view its chat history.</p>
+      </div>
+    `;
+
+    await this.loadMemoryView();
+  }
+
+  async deleteMessage(projectId, messageId) {
+    const confirmed = confirm('Delete this message?');
+    if (!confirmed) return;
+
+    await Store.deleteMemoryMessage(projectId, messageId);
+
+    // Reload chat history
+    const project = await Store.getProjectMemory(projectId);
+    this.renderChatHistory(project);
+
+    // Reload project list to update message count
+    await this.loadMemoryView();
+  }
+
+  formatDate(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return date.toLocaleDateString();
+  }
+
+  formatTime(timestamp) {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   async submitAiInput() {

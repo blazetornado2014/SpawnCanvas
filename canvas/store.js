@@ -3,7 +3,7 @@
  * State management with Pub/Sub pattern and chrome.storage.local persistence.
  */
 
-const Store = (function() {
+const Store = (function () {
   'use strict';
 
   // Storage key prefixes
@@ -15,6 +15,7 @@ const Store = (function() {
   const AI_PROVIDER_KEY = STORAGE_PREFIX + 'ai_provider';
   const CHECKLIST_PROMPT_KEY = STORAGE_PREFIX + 'checklist_prompt';
   const NOTE_PROMPT_KEY = STORAGE_PREFIX + 'note_prompt';
+  const MEMORIES_KEY = STORAGE_PREFIX + 'memories';
 
   // Default workspace
   const DEFAULT_WORKSPACE_ID = 'default';
@@ -137,14 +138,14 @@ const Store = (function() {
   async function getWorkspaces() {
     const ids = await getWorkspaceList();
     const workspaces = [];
-    
+
     for (const id of ids) {
       const workspace = await loadWorkspaceData(id);
       if (workspace) {
         workspaces.push({ id: workspace.id, name: workspace.name });
       }
     }
-    
+
     return workspaces;
   }
 
@@ -217,17 +218,17 @@ const Store = (function() {
   async function createWorkspace(name) {
     const id = generateWorkspaceId(name);
     const workspace = createWorkspaceObject(id, name);
-    
+
     // Save the workspace
     await saveWorkspaceData(workspace);
-    
+
     // Add to workspace list
     const list = await getWorkspaceList();
     if (!list.includes(id)) {
       list.push(id);
       await chrome.storage.local.set({ [WORKSPACES_LIST_KEY]: list });
     }
-    
+
     emit('workspace:created', workspace);
     return workspace;
   }
@@ -296,16 +297,16 @@ const Store = (function() {
     if (currentWorkspace) {
       await saveNow();
     }
-    
+
     // Load the target workspace
     let workspace = await loadWorkspaceData(id);
-    
+
     // If workspace doesn't exist (e.g., default on first run), create it
     if (!workspace) {
       if (id === DEFAULT_WORKSPACE_ID) {
         workspace = createWorkspaceObject(DEFAULT_WORKSPACE_ID, DEFAULT_WORKSPACE_NAME);
         await saveWorkspaceData(workspace);
-        
+
         // Ensure it's in the list
         const list = await getWorkspaceList();
         if (!list.includes(DEFAULT_WORKSPACE_ID)) {
@@ -317,12 +318,12 @@ const Store = (function() {
         return false;
       }
     }
-    
+
     currentWorkspace = workspace;
-    
+
     // Save current workspace ID
     await chrome.storage.local.set({ [CURRENT_WORKSPACE_KEY]: id });
-    
+
     emit('workspace:switched', currentWorkspace);
     return true;
   }
@@ -417,7 +418,7 @@ const Store = (function() {
     if (index === -1) return null;
 
     const item = currentWorkspace.items[index];
-    
+
     // Apply changes
     Object.assign(item, changes, { updatedAt: Date.now() });
     currentWorkspace.updatedAt = Date.now();
@@ -478,11 +479,11 @@ const Store = (function() {
    */
   function updateViewport(x, y) {
     if (!currentWorkspace) return;
-    
+
     currentWorkspace.viewportX = x;
     currentWorkspace.viewportY = y;
     currentWorkspace.updatedAt = Date.now();
-    
+
     scheduleSave();
   }
 
@@ -840,6 +841,124 @@ const Store = (function() {
   }
 
   // ============================================
+  // MEMORY STORAGE (Global Project Memories)
+  // ============================================
+
+  /**
+   * Get all memory projects
+   * @returns {Promise<object>} Object with projects keyed by projectId
+   */
+  async function getMemories() {
+    if (!isStorageAvailable()) return { projects: {} };
+    try {
+      const result = await chrome.storage.local.get(MEMORIES_KEY);
+      return result[MEMORIES_KEY] || { projects: {} };
+    } catch (err) {
+      console.error('[Store] Error getting memories:', err);
+      return { projects: {} };
+    }
+  }
+
+  /**
+   * Get a single project's memory
+   * @param {string} projectId - Project ID
+   * @returns {Promise<object|null>} Project memory or null
+   */
+  async function getProjectMemory(projectId) {
+    const memories = await getMemories();
+    return memories.projects[projectId] || null;
+  }
+
+  /**
+   * Save a memory message to a project
+   * @param {string} projectId - Project ID (extracted from URL slug)
+   * @param {object} message - Message object with prompt, response, timestamps
+   * @returns {Promise<boolean>} Success
+   */
+  async function saveMemoryMessage(projectId, message) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+
+      // Create project entry if it doesn't exist
+      if (!memories.projects[projectId]) {
+        memories.projects[projectId] = {
+          id: projectId,
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+      }
+
+      // Add message with unique ID
+      const messageWithId = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        ...message
+      };
+
+      memories.projects[projectId].messages.push(messageWithId);
+      memories.projects[projectId].updatedAt = Date.now();
+
+      await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+      emit('memory:saved', { projectId, message: messageWithId });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error saving memory message:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a project's memory
+   * @param {string} projectId - Project ID to delete
+   * @returns {Promise<boolean>} Success
+   */
+  async function deleteProjectMemory(projectId) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+      if (memories.projects[projectId]) {
+        delete memories.projects[projectId];
+        await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+        emit('memory:deleted', { projectId });
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[Store] Error deleting project memory:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a specific message from a project's memory
+   * @param {string} projectId - Project ID
+   * @param {string} messageId - Message ID to delete
+   * @returns {Promise<boolean>} Success
+   */
+  async function deleteMemoryMessage(projectId, messageId) {
+    if (!isStorageAvailable()) return false;
+    try {
+      const memories = await getMemories();
+      const project = memories.projects[projectId];
+      if (!project) return false;
+
+      const index = project.messages.findIndex(m => m.id === messageId);
+      if (index === -1) return false;
+
+      project.messages.splice(index, 1);
+      project.updatedAt = Date.now();
+
+      await chrome.storage.local.set({ [MEMORIES_KEY]: memories });
+      emit('memory:messageDeleted', { projectId, messageId });
+      return true;
+    } catch (err) {
+      console.error('[Store] Error deleting memory message:', err);
+      return false;
+    }
+  }
+
+  // ============================================
   // PERSISTENCE
   // ============================================
 
@@ -864,9 +983,9 @@ const Store = (function() {
       clearTimeout(saveTimeout);
       saveTimeout = null;
     }
-    
+
     if (!currentWorkspace) return;
-    
+
     try {
       await saveWorkspaceData(currentWorkspace);
       emit('workspace:saved', currentWorkspace);
@@ -887,10 +1006,10 @@ const Store = (function() {
 
     // Get current workspace ID
     const currentId = await getCurrentWorkspaceId();
-    
+
     // Switch to it (will create default if needed)
     await switchWorkspace(currentId);
-    
+
     // Set up beforeunload to save on page close
     window.addEventListener('beforeunload', () => {
       // Use synchronous approach for beforeunload
@@ -904,7 +1023,7 @@ const Store = (function() {
     isInitialized = true;
     emit('store:initialized', currentWorkspace);
     console.log('[Store] Initialized with workspace:', currentWorkspace?.name);
-    
+
     return currentWorkspace;
   }
 
@@ -961,7 +1080,14 @@ const Store = (function() {
     getChecklistPrompt,
     setChecklistPrompt,
     getNotePrompt,
-    setNotePrompt
+    setNotePrompt,
+
+    // Memory Storage
+    getMemories,
+    getProjectMemory,
+    saveMemoryMessage,
+    deleteProjectMemory,
+    deleteMemoryMessage
   };
 
 })();
